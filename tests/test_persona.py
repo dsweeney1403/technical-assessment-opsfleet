@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from test_gateway import BRANDS, CURATED, FakeClient
 from test_graph import FakeLLM, sql_call
 
-from analyst.config import User, load_settings
+from analyst.config import User, load_settings, load_users
 from analyst.graph import Deps, build_graph
 from analyst.observability.tracer import JsonlExporter, TraceHandler, Tracer, now_ns
 from analyst.persona import load_persona
@@ -160,7 +160,7 @@ def test_smoke_cases_load():
 
     cases = load_cases(ROOT / "evals" / "persona_smoke.yaml")
     assert len(cases) >= 5 and any(c.expect == ["declined"] for c in cases)
-    assert {c.user for c in cases} <= {u.id for u in __import__("analyst.config", fromlist=["load_users"]).load_users().users}
+    assert {c.user for c in cases} <= {u.id for u in load_users().users}
 
 
 def test_smoke_runner_uses_a_fresh_conversation_per_case_and_throttles(tmp_path):
