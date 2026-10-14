@@ -14,6 +14,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:google.genai.*"]
+markers = ["live: needs real BigQuery and Gemini credentials; run with pytest -m live"]
+addopts = "-m 'not live'"
 
 [tool.setuptools.package-data]
 analyst = ["sql/*.sql"]

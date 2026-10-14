@@ -90,7 +90,28 @@ def check_curated_sql() -> Check:
     return Check("Curated SQL", True, "Dry run OK: " + ", ".join(f"{k} {v:.1f} MB" for k, v in scanned.items()))
 
 
-CHECKS: list[Callable[[], Check]] = [check_config, check_env, check_gemini, check_bigquery, check_curated_sql]
+def check_reconciliation() -> Check:
+    fix = "The curated tables dropped rows. Check the joins in src/analyst/sql/curated.sql."
+    try:
+        from google.cloud import bigquery
+
+        from analyst.sql.gateway import load_curated
+        from analyst.sql.reconcile import run_reconciliation
+
+        settings, env = load_settings(), load_env()
+        client = bigquery.Client(project=env.google_cloud_project)
+        checks = run_reconciliation(client, load_curated(settings.bigquery.dataset), settings.bigquery.dataset)
+    except Exception as exc:
+        return Check("Reconciliation", False, f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}", fix)
+    failed = [c for c in checks if not c.ok]
+    if failed:
+        return Check("Reconciliation", False, "; ".join(f"{c.name}: {c.curated} vs {c.raw}" for c in failed), fix)
+    return Check("Reconciliation", True, f"Curated tables match raw tables ({len(checks)} checks)")
+
+
+CHECKS: list[Callable[[], Check]] = [
+    check_config, check_env, check_gemini, check_bigquery, check_curated_sql, check_reconciliation,
+]
 
 
 def run_checks(checks: list[Callable[[], Check]] | None = None) -> list[Check]:

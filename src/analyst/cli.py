@@ -43,19 +43,17 @@ def build_session(user_id: str) -> Session:
 
     from analyst.graph import Deps, build_graph
     from analyst.llm.client import LLM
-    from analyst.sql.gateway import Gateway, load_curated
+    from analyst.sql.brands import BrandMatcher
+    from analyst.sql.gateway import Gateway, load_brands, load_curated
     from analyst.store.results import ResultStore
 
     settings = load_settings()
     user = load_users().get(user_id)
     env = load_env()
     store = ResultStore()
-    gateway = Gateway(
-        settings.bigquery,
-        bigquery.Client(project=env.google_cloud_project),
-        store,
-        load_curated(settings.bigquery.dataset),
-    )
+    client = bigquery.Client(project=env.google_cloud_project)
+    brands = BrandMatcher(load_brands(client, settings.bigquery.dataset))
+    gateway = Gateway(settings.bigquery, client, store, load_curated(settings.bigquery.dataset), brands)
     graph = build_graph(Deps(settings, LLM(settings, env.gemini_api_key), gateway, store))
     return Session(user, graph, uuid.uuid4().hex)
 
@@ -101,9 +99,6 @@ def chat(
     with friendly_errors(debug):
         session = build_session(user)
     if session is None:
-        raise typer.Exit(1)
-    if not session.user.all_brands:
-        console.print("[yellow]Brand scoping arrives in phase 2. In this build only the CEO can chat.[/yellow]")
         raise typer.Exit(1)
     console.print(f"Signed in as {whoami(session.user)} Type /help for help, /exit to leave.")
     while True:

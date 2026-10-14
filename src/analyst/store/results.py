@@ -6,7 +6,7 @@ context (D1.12). Lives for the CLI session (D1.18).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -18,6 +18,7 @@ class StoredResult:
     sql: str  # as the model wrote it
     sql_rewritten: str  # as executed
     data_ts: str
+    meta: dict = field(default_factory=dict)  # metric, filters, grouping (D1.13)
 
 
 class ResultNotFound(KeyError):
@@ -28,9 +29,9 @@ class ResultStore:
     def __init__(self) -> None:
         self._results: dict[str, StoredResult] = {}
 
-    def put(self, df: pd.DataFrame, sql: str, sql_rewritten: str, data_ts: str) -> StoredResult:
+    def put(self, df: pd.DataFrame, sql: str, sql_rewritten: str, data_ts: str, meta: dict | None = None) -> StoredResult:
         result_id = f"r{len(self._results) + 1}"
-        stored = StoredResult(result_id, df, sql, sql_rewritten, data_ts)
+        stored = StoredResult(result_id, df, sql, sql_rewritten, data_ts, meta or {})
         self._results[result_id] = stored
         return stored
 

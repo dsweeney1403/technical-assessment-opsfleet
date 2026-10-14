@@ -73,10 +73,10 @@ def test_unknown_user_is_friendly(monkeypatch):
     assert result.exit_code == 1 and "Known users" in result.output and "Traceback" not in result.output
 
 
-def test_scoped_users_blocked_until_phase_2(monkeypatch):
+def test_scoped_user_can_chat(monkeypatch):
     use_session(monkeypatch, user=BM)
-    result = runner.invoke(cli.app, ["chat", "--user", "bm_calvin"], input="/exit\n")
-    assert result.exit_code == 1 and "phase 2" in result.output
+    result = runner.invoke(cli.app, ["chat", "--user", "bm_calvin"], input="/whoami\n/exit\n")
+    assert result.exit_code == 0 and "Brands: Calvin Klein." in result.output
 
 
 def test_doctor_reports_failures_with_fix(monkeypatch):
