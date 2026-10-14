@@ -1,4 +1,4 @@
-"""Command line: `chat --user <id>` and `doctor`."""
+"""Command line: `chat --user <id>`, `trace <id>` and `doctor`."""
 
 from __future__ import annotations
 
@@ -209,6 +209,23 @@ def chat(
             with friendly_errors(debug):
                 answer(session, text)
             trace_line(session)
+
+
+@app.command("trace")
+def trace_cmd(
+    trace_id: str = typer.Argument(..., help="Trace id shown under an answer; a unique prefix is enough"),
+    full: bool = typer.Option(False, "--full", help="Add the complete messages and tool results"),
+) -> None:
+    """Show one turn's trace as a tree."""
+    from analyst.observability import viewer
+
+    try:
+        records = viewer.find(load_settings().tracing.dir, trace_id)
+    except (viewer.TraceNotFound, ConfigError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    for record in records:
+        console.print(viewer.render(record, full))
 
 
 @app.command()

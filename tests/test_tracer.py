@@ -7,11 +7,12 @@ import pytest
 from google.api_core import exceptions as gexc
 from google.genai.errors import ClientError, ServerError
 from langchain_core.messages import AIMessage, ToolMessage
+from rich.console import Console
 
 from analyst.config import User, load_settings
 from analyst.graph import Deps, build_graph
 from analyst.llm.client import LLM, LLMFatalError, LLMUnavailableError
-from analyst.observability import tracer
+from analyst.observability import tracer, viewer
 from analyst.observability.tracer import JsonlExporter, Tracer, outcome_for, read_traces
 from analyst.safety.classifier import ClassifierOutput
 from analyst.sql.brands import BrandMatcher
@@ -187,6 +188,11 @@ def test_repaired_answer_has_full_span_tree(run):
     assert record["totals"]["bytes"] == 10_485_760
     assert record["answer"].startswith("Revenue in January")
     assert read_traces(t.path) == [json.loads(json.dumps(record, default=str))]
+
+    console = Console(width=200, record=True, color_system=None)
+    console.print(viewer.render(read_traces(t.path)[0], full=True))
+    shown = console.export_text()
+    assert "run_sql  PARSE_ERROR" in shown and "gateway  60 rows" in shown and "outcome  answered (OK)" in shown
 
 
 def test_trace_never_holds_rows_the_model_did_not_see(run):
