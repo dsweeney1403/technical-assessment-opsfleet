@@ -14,8 +14,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:google.genai.*"]
-markers = ["live: needs real BigQuery and Gemini credentials; run with pytest -m live"]
-addopts = "-m 'not live'"
+markers = [
+    "live: needs real BigQuery and Gemini credentials; run with pytest -m live",
+    "slow: starts a subprocess; skipped locally, run in CI and the final check with pytest -m slow",
+]
+addopts = "-m 'not live and not slow'"
 
 [tool.setuptools.package-data]
 analyst = ["sql/*.sql"]
