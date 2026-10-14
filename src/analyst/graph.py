@@ -34,7 +34,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from analyst import memory, prompts
+from analyst import memory, preferences, prompts
 from analyst.persona import load_persona
 from analyst.config import AnalysisDefaults, Glossary, Settings, User, load_analysis_defaults, load_glossary
 from analyst.llm.client import LLM, CallStats, LLMError, LLMOutputError
@@ -61,9 +61,9 @@ from analyst.state import (
     SectionResult,
     SecurityEvent,
 )
-from analyst.store.base import NewVersion, ReportStore, SavedFinding
+from analyst.store.base import NewVersion, ProfileStore, ReportStore, SavedFinding
 from analyst.store.results import ResultStore
-from analyst.store.sqlite_store import SQLiteReportStore
+from analyst.store.sqlite_store import SQLiteProfileStore, SQLiteReportStore
 from analyst.tools.chart import make_chart_tool
 from analyst.tools.compute import make_compute_tool
 from analyst.tools.reports import make_report_tools
@@ -78,7 +78,8 @@ CHECKPOINT_TYPES = [
     ("analyst.config", "User"),
     *[("analyst.state", name) for name in (
         "Record", "Intent", "Classified", "Budget", "Draft", "SecurityEvent", "Section", "Outline", "SectionResult",
-        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete", "PersonaInUse")],
+        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete", "PersonaInUse", "StatedPreference")],
+    *[("analyst.store.base", name) for name in ("UserProfile", "Preference")],
 ]
 BUDGET_SPENT = (
     "The tool budget for this turn is used up. Answer now with the results you have, "
@@ -116,6 +117,7 @@ class Deps:
     glossary: Glossary | None = field(default_factory=load_glossary)  # D4.2
     defaults: AnalysisDefaults | None = field(default_factory=load_analysis_defaults)  # D4.15
     persona_dir: Path | None = None  # settings.persona.dir when not given
+    profiles: ProfileStore | None = None  # in-memory SQLite when not given (tests)
 
 
 def _charge(budget: Budget, stats: CallStats) -> Budget:
@@ -187,6 +189,8 @@ def build_graph(deps: Deps, checkpointer=None):
     reports = deps.reports or SQLiteReportStore(":memory:")
     mentions = deps.mentions or MentionScanner(deps.brands.all_brands, deps.known)
     persona_dir = deps.persona_dir or deps.settings.persona.dir
+    profiles = deps.profiles or SQLiteProfileStore(":memory:")
+    infer_after = deps.settings.profile.inferred_preference_after
 
     def is_report_turn(state: AgentState) -> bool:
         classified = state.get("classified")
@@ -205,8 +209,9 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def layers_for(state: AgentState) -> prompts.Layers:
         """The prompt layers for this turn (D4.24)."""
-        persona = state.get("persona")
+        persona, profile = state.get("persona"), state.get("profile")
         return prompts.Layers(glossary=deps.glossary, defaults=deps.defaults,
+                              preferences=preferences.render(profile), own_defaults=preferences.own_defaults(profile),
                               persona=persona.text if persona else "", persona_version=persona.version if persona else "")
 
     def chat_messages(state: AgentState) -> list[BaseMessage]:
@@ -323,6 +328,9 @@ def build_graph(deps: Deps, checkpointer=None):
         p = load_persona(persona_dir)  # every turn, so an edit applies to the next answer (D4.22)
         return {
             "persona": PersonaInUse(version=p.version, text=p.text, fallback_from=p.fallback_from, error=p.error),
+            "profile": profiles.get(state["user"]),
+            "preference_note": None,
+            "definition_request": False,
             "trace_id": uuid.uuid4().hex[:8],
             "continues": None,
             "messages": state.get("messages", []),
@@ -368,6 +376,50 @@ def build_graph(deps: Deps, checkpointer=None):
         if state["decline"]:
             return "decline"
         classified = state["classified"]
+        if classified.stated_preference is not None or classified.format_request != "none":
+            return "preferences"
+        return route_intent(state)
+
+    def preferences_node(state: AgentState) -> dict:
+        """Code decides what is saved (D4.15, D4.16). The classifier only reported what was asked."""
+        classified, user = state["classified"], state["user"]
+        pref = preferences.valid(classified.stated_preference) if classified.stated_preference else None
+        update: dict = {}
+        note = None
+        if pref is not None and pref.kind == "safety_control":
+            return {"decline": "safety_control"}  # never a preference, never saved
+        if pref is not None and pref.kind == "definition":
+            update["definition_request"] = True  # answered from the glossary, not saved (D4.2)
+        elif pref is not None and pref.kind == "presentation":
+            profiles.set_presentation(user, pref.field, pref.value, "stated")
+            note = preferences.acknowledgement(pref)
+        elif pref is not None:
+            profiles.set_default(user, pref.field, pref.value)
+            note = preferences.acknowledgement(pref)
+        if classified.format_request in preferences.FORMAT_REQUESTS:
+            field_, value = preferences.FORMAT_REQUESTS[classified.format_request]
+            current = profiles.get(user).presentation.get(field_)
+            count = profiles.count_format(user, classified.format_request)
+            if count >= infer_after and (current is None or (current.source == "inferred" and current.value != value)):
+                profiles.set_presentation(user, field_, value, "inferred")  # silent, visible in /prefs (D4.16)
+        update["profile"] = profiles.get(user)
+        if note and classified.intent in LIGHT_INTENTS | {Intent.unavailable}:
+            update["draft"] = Draft(text=note, source="code")  # nothing else to answer
+        elif note:
+            update["preference_note"] = note
+        return update
+
+    def route_after_preferences(state: AgentState) -> str:
+        if state.get("decline"):
+            return "decline"
+        if state["draft"].text:
+            return "output_check"
+        if state.get("definition_request"):
+            return "light_reply"
+        return route_intent(state)
+
+    def route_intent(state: AgentState) -> str:
+        classified = state["classified"]
         if classified.intent in LIGHT_INTENTS:
             return "light_reply"
         if classified.intent == Intent.report_action:
@@ -394,7 +446,7 @@ def build_graph(deps: Deps, checkpointer=None):
     def light_reply(state: AgentState) -> dict:
         stats = CallStats()
         layers = layers_for(state)
-        if state["classified"].intent != Intent.data_question:
+        if state["classified"].intent != Intent.data_question and not state.get("definition_request"):
             layers = replace(layers, glossary=None)  # the glossary is for analysis and data questions (D4.2)
         system = prompts.light_system(state["user"], deps.today(), state["summary"], deps.known, layers)
         msg = deps.llm.invoke(
@@ -633,6 +685,8 @@ def build_graph(deps: Deps, checkpointer=None):
         if draft.source in ("agent", "light"):
             charts = _tool_results(state["turn_messages"])[1]
         text = draft.text
+        if state.get("preference_note"):
+            text = f"{state['preference_note']}\n\n{text}"
         if draft.source == "agent":
             classified = state["classified"]
             note = scope_note(state["user"], classified.out_of_scope_brands if classified else [])
@@ -683,7 +737,8 @@ def build_graph(deps: Deps, checkpointer=None):
 
     g = StateGraph(AgentState)
     for name, fn in [("load_context", load_context), ("classify", classify_node), ("light_reply", light_reply),
-                     ("decline", decline), ("agent", make_agent(chat_messages)), ("tools", tools),
+                     ("decline", decline), ("preferences", preferences_node), ("agent", make_agent(chat_messages)),
+                     ("tools", tools),
                      ("plan", plan), ("confirm_outline", confirm_outline), ("section", section), ("write", write),
                      ("save_report", save_report), ("download_report", download_report),
                      ("confirm_delete", confirm_delete), ("delete_reports", delete_reports),
@@ -692,7 +747,9 @@ def build_graph(deps: Deps, checkpointer=None):
     g.add_edge(START, "load_context")
     g.add_edge("load_context", "classify")
     g.add_conditional_edges("classify", route_after_classify,
-                            ["light_reply", "decline", "agent", "plan", "save_report", "download_report"])
+                            ["preferences", "light_reply", "decline", "agent", "plan", "save_report", "download_report"])
+    g.add_conditional_edges("preferences", route_after_preferences,
+                            ["output_check", "light_reply", "decline", "agent", "plan", "save_report", "download_report"])
     g.add_edge("light_reply", "output_check")
     g.add_edge("decline", "output_check")
     g.add_conditional_edges("agent", route_after_agent, ["tools", "output_check"])

@@ -33,6 +33,7 @@ Commands:
   /whoami   show who you are signed in as and which brands you can see
   /retry    pick up a question that stopped because Gemini was unavailable
   /stats    session metrics: business view and engineering view
+  /prefs    show your saved preferences and defaults; /prefs reset clears them
   /persona  show which persona version is active
   /reports  list your saved reports
   /download <number>  save a copy of a report from /reports to the reports/ folder
@@ -51,6 +52,7 @@ class Session:
     thread_id: str
     tracer: Tracer
     reports: object = None  # ReportStore
+    profiles: object = None  # ProfileStore
     pending: bool = False  # the last turn stopped on an LLM outage and can resume (D2.13)
     awaiting: str | None = None  # trace id of a turn waiting for a confirmation reply (D3.2, D3.20)
 
@@ -69,7 +71,7 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     from analyst.sql.gateway import BQ_ERRORS, Gateway, load_brands, load_curated
     from analyst.reports.mentions import MentionScanner
     from analyst.store.results import ResultStore
-    from analyst.store.sqlite_store import SQLiteReportStore
+    from analyst.store.sqlite_store import SQLiteProfileStore, SQLiteReportStore
 
     from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -94,10 +96,11 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     llm = LLM(settings, env.gemini_api_key, chat_factory=factory)
     reports = SQLiteReportStore(settings.reports.sqlite_path)
     reports.purge(settings.reports.purge_after_days)  # D3.23; production runs this as a scheduled job
+    profiles = SQLiteProfileStore(settings.reports.sqlite_path)  # same file as the reports (D4.25)
     graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known, reports=reports,
-                             mentions=MentionScanner(brands.all_brands, known)))
+                             mentions=MentionScanner(brands.all_brands, known), profiles=profiles))
     thread_id = uuid.uuid4().hex
-    return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports)
+    return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports, profiles)
 
 
 @contextmanager
@@ -218,6 +221,34 @@ def download_numbered(session: Session, arg: str) -> None:
     console.print(f"Saved a copy to {path}. A downloaded copy is outside the app's access controls.", markup=False)
 
 
+def show_prefs(session: Session, arg: str) -> None:
+    """D4.15: preferences are visible, changeable and resettable."""
+    from analyst.config import load_analysis_defaults
+    from analyst.preferences import LABELS
+
+    if session.profiles is None:
+        console.print("Preferences aren't available in this session.")
+        return
+    if arg == "reset":
+        session.profiles.reset(session.user)
+        console.print("Cleared your preferences and defaults. Answers use the system defaults again.")
+        return
+    if arg:
+        console.print("Use /prefs to see your preferences, or /prefs reset to clear them.")
+        return
+    profile = session.profiles.get(session.user)
+    table = Table(show_header=True, header_style="bold")
+    for col in ("Preference", "Value", "Source", "Set"):
+        table.add_column(col)
+    for p in [*profile.presentation.values(), *profile.analysis_defaults.values()]:
+        table.add_row(LABELS.get(p.field, p.field), p.value, p.source, p.set_at)
+    defaults = load_analysis_defaults(load_settings().profile.analysis_defaults)
+    for field, value in defaults.model_dump().items():
+        if field not in profile.analysis_defaults:
+            table.add_row(LABELS.get(field, field), value, "system default", "")
+    console.print(table)
+
+
 def persona_line() -> str:
     from analyst.persona import load_persona
 
@@ -286,6 +317,8 @@ def chat(
             console.print(whoami(session.user), markup=False)
         elif text == "/stats":
             show_stats(session)
+        elif text.startswith("/prefs"):
+            show_prefs(session, text.removeprefix("/prefs").strip())
         elif text == "/persona":
             console.print(persona_line(), markup=False)
         elif text == "/reports":

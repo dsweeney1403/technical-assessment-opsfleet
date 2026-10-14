@@ -1,4 +1,4 @@
-"""SQLite report store (D3.10, D3.11, D3.23, D3.24). One local file, zero setup.
+"""SQLite report and profile stores (D3.10, D3.11, D3.23, D3.24, D4.25). One local file, zero setup.
 
 The owner filter is in every query's WHERE clause, so no read path can forget
 it (D3.13). The hidden filter (D3.15) runs on the rows that come back. A delete
@@ -19,9 +19,12 @@ from analyst.sql.brands import CUTOFF, normalise
 from analyst.store.base import (
     AuditEntry,
     NewVersion,
+    Preference,
+    ProfileStore,
     ReportStore,
     ReportVersion,
     SavedFinding,
+    UserProfile,
     brands_scope,
     visible_to,
 )
@@ -188,3 +191,75 @@ class SQLiteReportStore(ReportStore):
         rows = self._conn.execute("SELECT * FROM audit ORDER BY audit_id").fetchall()
         return [AuditEntry(**{**dict(r), "report_ids": json.loads(r["report_ids"]), "titles": json.loads(r["titles"])})
                 for r in rows]
+
+
+PROFILE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS preferences (
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    field TEXT NOT NULL,
+    value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind, field)
+);
+CREATE TABLE IF NOT EXISTS format_counts (
+    user_id TEXT NOT NULL,
+    request TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (user_id, request)
+);
+"""
+
+
+class SQLiteProfileStore(ProfileStore):
+    """User profiles in the same SQLite file as the reports (D4.25). Every query filters on the user's id."""
+
+    def __init__(self, path: Path | str, clock=_now):
+        self.path = str(path)
+        self._clock = clock
+        if self.path != ":memory:":
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(PROFILE_SCHEMA)
+
+    def get(self, user: User) -> UserProfile:
+        profile = UserProfile(user_id=user.id)
+        for row in self._conn.execute("SELECT * FROM preferences WHERE user_id = ? ORDER BY field", (user.id,)):
+            pref = Preference(field=row["field"], value=row["value"], source=row["source"], set_at=row["set_at"])
+            target = profile.presentation if row["kind"] == "presentation" else profile.analysis_defaults
+            target[pref.field] = pref
+        return profile
+
+    def _put(self, user: User, kind: str, field: str, value: str, source: str) -> Preference:
+        pref = Preference(field=field, value=value, source=source, set_at=_iso(self._clock()))
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO preferences VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, kind, field) "
+                "DO UPDATE SET value = excluded.value, source = excluded.source, set_at = excluded.set_at",
+                (user.id, kind, field, value, source, pref.set_at))
+        return pref
+
+    def set_presentation(self, user: User, field: str, value: str, source: str) -> Preference | None:
+        current = self.get(user).presentation.get(field)
+        if source == "inferred" and current is not None and current.source == "stated":
+            return None  # a stated preference beats an inferred one (D4.15)
+        return self._put(user, "presentation", field, value, source)
+
+    def set_default(self, user: User, field: str, value: str) -> Preference:
+        return self._put(user, "analysis_default", field, value, "stated")
+
+    def count_format(self, user: User, request: str) -> int:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO format_counts VALUES (?, ?, 1) ON CONFLICT (user_id, request) "
+                "DO UPDATE SET count = count + 1", (user.id, request))
+        row = self._conn.execute("SELECT count FROM format_counts WHERE user_id = ? AND request = ?",
+                                 (user.id, request)).fetchone()
+        return row["count"]
+
+    def reset(self, user: User) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM preferences WHERE user_id = ?", (user.id,))
+            self._conn.execute("DELETE FROM format_counts WHERE user_id = ?", (user.id,))

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from analyst.llm.client import LLM, CallStats, LLMError
 from analyst.memory import split_turns
 from analyst.prompts import CLASSIFIER
-from analyst.state import Classified, Intent
+from analyst.state import Classified, FormatRequest, Intent, StatedPreference
 
 RECENT_TURNS = 3
 
@@ -28,6 +28,10 @@ class ClassifierOutput(BaseModel):
     brands_mentioned: list[str] = Field(default_factory=list, description="Brand names only, as the user wrote them.")
     is_followup: bool = False
     report_op: Literal["create", "redo", "save", "library", "download", "delete", "none"] = "none"
+    format_request: FormatRequest = "none"
+    preference_kind: Literal["presentation", "analysis_default", "definition", "safety_control", "none"] = "none"
+    preference_field: str = Field("", description="See the instructions. Empty when preference_kind is none.")
+    preference_value: str = Field("", description="The value as the user said it. Empty when none.")
     reason: str = Field(description="One short sentence.")
 
 
@@ -53,5 +57,9 @@ def classify(llm: LLM, history: list[BaseMessage], user_input: str, stats: CallS
         brands_mentioned=out.brands_mentioned,
         is_followup=out.is_followup,
         report_op=out.report_op if out.intent == "report_action" else "none",
+        format_request=out.format_request,
+        stated_preference=(StatedPreference(kind=out.preference_kind, field=out.preference_field.strip().lower(),
+                                            value=out.preference_value.strip())
+                           if out.preference_kind != "none" else None),
         reason=out.reason,
     )

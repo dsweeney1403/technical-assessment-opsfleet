@@ -10,6 +10,7 @@ returns.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -104,3 +105,46 @@ class ReportStore(ABC):
     @abstractmethod
     def audit(self) -> list[AuditEntry]:
         """Admin only: the audit trail, oldest first."""
+
+
+# User profiles (D4.15, D4.18, D4.25)
+
+
+class Preference(BaseModel):
+    field: str  # presentation: format | length | charts; analysis defaults: period | breakdown | brand_order
+    value: str
+    source: Literal["stated", "inferred"]  # analysis defaults are always stated (D4.15)
+    set_at: str
+
+
+class UserProfile(BaseModel):
+    """One per user. Remembered context items (D4.17) are design only, so not stored here."""
+
+    user_id: str
+    presentation: dict[str, Preference] = Field(default_factory=dict)
+    analysis_defaults: dict[str, Preference] = Field(default_factory=dict)
+
+
+class ProfileStore(ABC):
+    """Every method takes the signed-in `User`, injected by code. The prototype uses SQLite in the
+    reports file; production needs only a Firestore adapter (D4.25)."""
+
+    @abstractmethod
+    def get(self, user: User) -> UserProfile:
+        """The user's profile; empty if they have none."""
+
+    @abstractmethod
+    def set_presentation(self, user: User, field: str, value: str, source: str) -> Preference | None:
+        """Save a presentation preference. An inferred value never replaces a stated one: returns None then."""
+
+    @abstractmethod
+    def set_default(self, user: User, field: str, value: str) -> Preference:
+        """Save an analysis default. Only ever stated (D4.15)."""
+
+    @abstractmethod
+    def count_format(self, user: User, request: str) -> int:
+        """Count one format request across sessions (D4.16). Returns the new count."""
+
+    @abstractmethod
+    def reset(self, user: User) -> None:
+        """Clear the user's preferences, defaults and request counts (/prefs reset)."""

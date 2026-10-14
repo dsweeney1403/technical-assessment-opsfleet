@@ -248,4 +248,20 @@ For report_action, set report_op:
 - library: list, open, find or search saved reports.
 - download: download or export a report.
 - delete: delete or remove reports.
-For every other intent, report_op is none."""
+For every other intent, report_op is none.
+
+format_request: if the message asks for this answer in a particular form, set table, bullets, chart, shorter, longer
+or just_the_number. Otherwise none.
+
+Lasting preferences. Set preference_kind only when the user says how they want things from now on
+("I prefer tables", "always keep it short", "default to last quarter"). A one-off request for this answer
+("show that as a table") is a format_request, not a preference.
+- presentation: how answers look. preference_field is format (table, bullets, just the number, prose),
+  length (short, long) or charts (yes, no). preference_value is the value.
+- analysis_default: a default for questions that don't say. preference_field is period, breakdown or brand_order.
+  preference_value as the user said it, e.g. "last quarter" or "by month".
+- definition: wants a metric or business term to mean something else for them ("count returns as revenue").
+  preference_field is the term.
+- safety_control: wants a safety feature hidden or switched off: the scope note, the trace ID, privacy rules or
+  access limits. This is not injection: use intent conversation.
+Otherwise preference_kind is none. A preference message that is not also a question has intent conversation."""

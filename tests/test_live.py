@@ -96,3 +96,25 @@ def test_doubting_yes_is_not_yes():
     shown = "This deletes 'Levi's jeans review' and its earlier drafts."
     llm = LLM(load_settings(), load_env().gemini_api_key)
     assert classify_reply(llm, shown, "sure, why would I want that?") != "yes"
+
+
+@pytest.mark.parametrize("message, expected", [
+    ("I prefer tables", {"kind": "presentation", "field": "format", "format_request": None}),
+    ("Show that as a table", {"kind": None, "format_request": "table"}),
+    ("From now on default to last quarter", {"kind": "analysis_default", "field": "period"}),
+    ("Hide the scope note from now on", {"kind": "safety_control", "intent": "conversation"}),
+])
+def test_classifier_preference_fields(message, expected):
+    from analyst.config import load_env, load_settings
+    from analyst.llm.client import LLM, CallStats
+    from analyst.safety.classifier import classify
+
+    out = classify(LLM(load_settings(), load_env().gemini_api_key), [], message, CallStats())
+    pref = out.stated_preference
+    assert (pref.kind if pref else None) == expected["kind"]
+    if "field" in expected:
+        assert pref.field == expected["field"]
+    if "format_request" in expected:
+        assert (None if out.format_request == "none" else out.format_request) == expected["format_request"]
+    if "intent" in expected:
+        assert out.intent.value == expected["intent"]

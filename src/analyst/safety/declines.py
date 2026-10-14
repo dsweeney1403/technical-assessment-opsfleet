@@ -27,6 +27,10 @@ DECLINES = {
         "That would need personal details such as names, emails or addresses, which I don't have access to. "
         "I can answer it with customer segments instead, for example by age band, gender or location."
     ),
+    "safety_control": (
+        "The scope note, the trace ID and the privacy rules are part of how the app works for everyone, "
+        "so I can't switch them off. I can change how answers look, for example tables or shorter answers."
+    ),
     "LEAK_BLOCKED": (
         "I can't show that answer because it may include details I'm not allowed to share. "
         "Try asking about groups, for example by age band, state or category."

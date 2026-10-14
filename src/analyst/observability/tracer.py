@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from analyst.config import Settings, User
 
 # Graph nodes that become spans. load_context and respond only move state around.
-TRACED_NODES = {"classify", "light_reply", "decline", "agent", "output_check", "save", "plan", "confirm_outline",
+TRACED_NODES = {"classify", "preferences", "light_reply", "decline", "agent", "output_check", "save", "plan", "confirm_outline",
                 "section", "write", "save_report", "download_report", "confirm_delete", "delete_reports"}
 SPAN_NAMES = {"agent": "agent_step"}
 
@@ -242,7 +242,14 @@ def _node_attributes(span_name: str, outputs) -> dict:
     if span_name == "classify" and outputs.get("classified") is not None:
         c = outputs["classified"]
         return {"verdict": c.intent.value, "confident": c.confident, "brands_mentioned": c.brands_mentioned,
-                "out_of_scope_brands": c.out_of_scope_brands, "decline": outputs.get("decline")}
+                "out_of_scope_brands": c.out_of_scope_brands, "decline": outputs.get("decline"),
+                "format_request": c.format_request,
+                "stated_preference": c.stated_preference.model_dump() if c.stated_preference else None}
+    if span_name == "preferences":
+        profile = outputs.get("profile")
+        return {"decline": outputs.get("decline"), "definition_request": outputs.get("definition_request", False),
+                "note": outputs.get("preference_note") or (outputs["draft"].text if outputs.get("draft") else None),
+                "profile": profile.model_dump(mode="json") if profile is not None else None}
     if span_name == "decline":
         return {"text": outputs["draft"].text} if outputs.get("draft") else {}
     if span_name == "plan" and outputs.get("outline") is not None:

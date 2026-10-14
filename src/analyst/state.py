@@ -9,6 +9,7 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 
 from analyst.config import User
+from analyst.store.base import UserProfile
 
 
 class Intent(StrEnum):
@@ -28,6 +29,17 @@ class Intent(StrEnum):
 ReportOp = Literal["create", "redo", "save", "library", "download", "delete", "none"]
 
 
+FormatRequest = Literal["table", "bullets", "chart", "shorter", "longer", "just_the_number", "none"]
+
+
+class StatedPreference(BaseModel):
+    """A lasting preference the user stated (D4.15). Code decides what, if anything, is saved."""
+
+    kind: Literal["presentation", "analysis_default", "definition", "safety_control"]
+    field: str = ""
+    value: str = ""
+
+
 class Classified(BaseModel):
     intent: Intent
     confident: bool = True  # an unsure decline intent goes to the agent (D1.8)
@@ -35,6 +47,8 @@ class Classified(BaseModel):
     out_of_scope_brands: list[str] = []  # filled by code against entitlements (D1.8 row 6)
     is_followup: bool = False
     report_op: ReportOp = "none"  # which report action, for report_action only (routing, phase 5)
+    format_request: FormatRequest = "none"  # a one-off presentation request, counted (D4.16)
+    stated_preference: StatedPreference | None = None
     reason: str = ""
 
 
@@ -207,3 +221,6 @@ class AgentState(TypedDict, total=False):
     opened_report: str | None  # report_id opened this turn, shown as saved (D3.16)
     pending_delete: PendingDelete | None
     persona: PersonaInUse | None
+    profile: UserProfile | None  # the user's preferences and defaults, read each turn (D4.18)
+    preference_note: str | None  # acknowledgement of a preference saved this turn
+    definition_request: bool  # the user asked to redefine a glossary term (D4.15)
