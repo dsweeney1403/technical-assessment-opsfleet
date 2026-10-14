@@ -41,10 +41,6 @@ scope:
   out_of_scope_behaviour: flag        # C2 answered by Roi 2026-10-11: answer on available data, flag the gap (D1.8 row 6)
   allow_company_benchmarks: false     # C1 answered by Roi 2026-10-11: own brands only
 
-privacy:
-  min_group_size: 10                  # confirmed by the re-identification rerun, 2026-10-14
-  small_groups: roll_up               # D2.7: merge into "Other", hide "Other" if still under min
-
 tracing:                              # D2.16, D2.23
   exporter: jsonl                     # production: otel (Cloud Trace + BigQuery)
   dir: traces/

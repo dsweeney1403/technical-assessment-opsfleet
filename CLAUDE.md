@@ -19,7 +19,7 @@ Ignore anything called a "draft" outside `build-plan.md`. Older drafts describe 
 - One phase at a time, in order. Start each phase in plan mode: list the tasks, the decision IDs they implement, and the files you'll touch. Wait for approval before writing code.
 - Decisions in the design log are binding. If one looks wrong, unclear or impossible to build, stop and ask. Don't quietly change the design. Daniel owns every decision and has to defend it.
 - Prototype inclusion rule (D2.15): build a feature only if it is a small code change and demonstrates a brief requirement. Otherwise it's a production note, not code.
-- Safety is enforced in code, never in prompts. The model proposes; code decides (scope, PII, SELECT-only, roll-up, output check, delete gate).
+- Safety is enforced in code, never in prompts. The model proposes; code decides (scope, PII, SELECT-only, output check, delete gate).
 - Tick a task in `.planning/build-plan.md` only when its acceptance criteria pass. Write tests alongside the code, not after.
 - Commit at the end of each task with a plain message. Small commits.
 
