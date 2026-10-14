@@ -1,10 +1,10 @@
-"""Entry point for `python -m analyst`. The CLI arrives in phase 1."""
+"""Entry point for `python -m analyst`."""
 
-from analyst import __version__
+from analyst.cli import app
 
 
 def main() -> None:
-    print(f"OpsFleet Analyst {__version__}")
+    app(prog_name="python -m analyst")
 
 
 if __name__ == "__main__":
