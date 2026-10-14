@@ -1,0 +1,25 @@
+# Unit tests on every push (D5.12, D8.1). No secrets: every test is mocked, and live tests are skipped.
+# Production builds and gates releases in Cloud Build (D6.15, D6.16); this workflow holds no credentials.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Unit tests, including the slow subprocess check
+        run: pytest -m "not live"
