@@ -1,0 +1,18 @@
+# Demo entitlements. `chat --user <id>` picks the entry.
+# Brand names must match products.brand exactly. "*" means all brands (CEO only).
+# Production reads brands from Google Groups instead (D7.5).
+users:
+  - id: ceo
+    name: CEO
+    role: ceo
+    brands: ["*"]
+
+  - id: bm_calvin
+    name: Calvin Klein brand manager
+    role: brand_manager
+    brands: ["Calvin Klein"]
+
+  - id: bm_levis
+    name: Levi's and Canada Goose brand manager
+    role: brand_manager
+    brands: ["Levi's", "Canada Goose"]
