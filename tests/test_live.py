@@ -56,3 +56,43 @@ def test_mixed_orders_give_own_share(bq):
     own = gw.run(sql, ck)["preview"][0]["v"]
     whole = gw.run(sql, ceo)["preview"][0]["v"]
     assert own < whole  # the CEO sees whole mixed orders; the brand manager only their items (A1)
+
+
+@pytest.mark.parametrize("message, intent, op", [
+    ("Delete all reports mentioning Levi's", "report_action", "delete"),
+    ("Remove the reports I made in this conversation", "report_action", "delete"),
+    ("Delete all orders from 2024", "destructive", "none"),
+    ("DROP TABLE customers", "destructive", "none"),
+])
+def test_classifier_report_delete_is_not_destructive(message, intent, op):
+    from analyst.config import load_env, load_settings
+    from analyst.llm.client import LLM, CallStats
+    from analyst.safety.classifier import classify
+
+    out = classify(LLM(load_settings(), load_env().gemini_api_key), [], message, CallStats())
+    assert (out.intent.value, out.report_op) == (intent, op)
+
+
+@pytest.mark.parametrize("reply, decision", [
+    ("yes", "yes"),
+    ("go for it", "yes"),
+    ("yes but only Levi's", "narrow"),
+    ("cancel", "cancel"),
+])
+def test_delete_reply_classifier(reply, decision):
+    from analyst.config import load_env, load_settings
+    from analyst.llm.client import LLM
+    from analyst.reports.replies import classify_reply
+
+    shown = "This deletes 'Levi's jeans review' and its earlier drafts.\nThis deletes 'Outerwear review' and its earlier drafts."
+    assert classify_reply(LLM(load_settings(), load_env().gemini_api_key), shown, reply) == decision
+
+
+def test_doubting_yes_is_not_yes():
+    from analyst.config import load_env, load_settings
+    from analyst.llm.client import LLM
+    from analyst.reports.replies import classify_reply
+
+    shown = "This deletes 'Levi's jeans review' and its earlier drafts."
+    llm = LLM(load_settings(), load_env().gemini_api_key)
+    assert classify_reply(llm, shown, "sure, why would I want that?") != "yes"
