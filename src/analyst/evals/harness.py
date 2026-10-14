@@ -78,12 +78,14 @@ def write_persona(directory: Path, text: str) -> Path:
 
 
 def new_session(user_id: str, workdir: Path, persona: str | None = None, seed: list[SeedReport] = (),
-                faults=None, build=None):
-    """A fresh session with its own files under `workdir`. `build` defaults to `cli.build_session`."""
+                faults=None, build=None, persona_dir: Path | None = None):
+    """A fresh session with its own files under `workdir`. `persona` is a one-version persona's text;
+    `persona_dir` an existing persona folder. `build` defaults to `cli.build_session`."""
     if build is None:
         from analyst.cli import build_session as build
     workdir.mkdir(parents=True, exist_ok=True)
-    persona_dir = write_persona(workdir / "persona", persona) if persona else None
+    if persona:
+        persona_dir = write_persona(workdir / "persona", persona)
     session = build(user_id, faults, reports_path=workdir / "reports.db", persona_dir=persona_dir)
     users = load_users()
     for r in seed:
