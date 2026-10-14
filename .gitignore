@@ -1,0 +1,23 @@
+# Local only: planning docs and personal dev files
+.planning/
+.development/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime output
+traces/
+reports/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
