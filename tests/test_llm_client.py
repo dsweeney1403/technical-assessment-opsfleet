@@ -158,3 +158,109 @@ def test_structured_parse_failure_raises():
     llm._chat("light").parsed = None
     with pytest.raises(LLMOutputError):
         llm.structured("light", Answer, [HumanMessage("x")])
+
+
+# Fallback chain and circuit breaker (D2.10 to D2.12)
+
+class ScriptedChat:
+    """Per-model behaviour: `failing[model]` is an exception raised on every call to that model."""
+
+    failing: dict = {}
+    calls: list = []
+
+    def __init__(self, model, **kwargs):
+        self.model = model
+
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, messages):
+        ScriptedChat.calls.append(self.model)
+        if self.model in ScriptedChat.failing:
+            raise ScriptedChat.failing[self.model]
+        return AIMessage(content=f"from {self.model}")
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def scripted_llm(failing, clock=None):
+    ScriptedChat.failing = failing
+    ScriptedChat.calls = []
+    return LLM(load_settings(), "key", chat_factory=ScriptedChat, clock=clock or Clock(), sleep=lambda s: None)
+
+
+def test_chains_come_from_config():
+    llm = scripted_llm({})
+    m = load_settings().models
+    assert llm.chain("agent") == [m.agent, *m.agent_fallbacks]
+    assert llm.chain("light") == [m.light, *m.light_fallbacks]
+
+
+def test_fallback_model_used_after_429s_and_recorded():
+    m = load_settings().models
+    llm = scripted_llm({m.agent: client_error(429)})
+    stats = CallStats()
+    out = llm.invoke("agent", [HumanMessage("x")], stats=stats)
+    assert out.content == f"from {m.agent_fallbacks[0]}"
+    assert stats.fallback_used and stats.models_used == [m.agent_fallbacks[0]]
+    assert ScriptedChat.calls.count(m.agent) == POLICY.max_attempts and stats.retries == POLICY.max_attempts - 1
+
+
+def test_fatal_error_does_not_fall_back():
+    m = load_settings().models
+    llm = scripted_llm({m.agent: client_error(401)})
+    with pytest.raises(LLMFatalError):
+        llm.invoke("agent", [HumanMessage("x")])
+    assert ScriptedChat.calls == [m.agent]
+
+
+def test_every_model_down_is_unavailable():
+    m = load_settings().models
+    llm = scripted_llm({mid: ServerError(503, {"error": {}}) for mid in [m.agent, *m.agent_fallbacks]})
+    with pytest.raises(LLMUnavailableError):
+        llm.invoke("agent", [HumanMessage("x")])
+    assert set(ScriptedChat.calls) == {m.agent, *m.agent_fallbacks}
+
+
+def test_breaker_opens_after_five_errors_then_skips_and_closes_after_cooldown():
+    m = load_settings().models
+    cfg = load_settings().circuit_breaker
+    clock = Clock()
+    llm = scripted_llm({m.agent: client_error(429)}, clock)
+    first, second = CallStats(), CallStats()
+    llm.invoke("agent", [HumanMessage("x")], stats=first)  # 3 errors
+    llm.invoke("agent", [HumanMessage("x")], stats=second)  # 2 more: opens on the fifth
+    assert ScriptedChat.calls.count(m.agent) == cfg.failures and second.breaker_opens == 1
+    assert llm.breakers[m.agent].is_open()
+
+    ScriptedChat.calls = []
+    llm.invoke("agent", [HumanMessage("x")])
+    assert m.agent not in ScriptedChat.calls  # skipped, no waiting
+
+    clock.now += cfg.cooldown_s + 1
+    ScriptedChat.failing = {}
+    assert llm.invoke("agent", [HumanMessage("x")]).content == f"from {m.agent}"
+    assert not llm.breakers[m.agent].is_open()
+
+
+def test_success_resets_the_breaker_count():
+    m = load_settings().models
+    llm = scripted_llm({m.agent: client_error(429)})
+    llm.invoke("agent", [HumanMessage("x")])  # 3 errors
+    ScriptedChat.failing = {}
+    llm.invoke("agent", [HumanMessage("x")])  # success resets
+    ScriptedChat.failing = {m.agent: client_error(429)}
+    llm.invoke("agent", [HumanMessage("x")])  # 3 more: still closed
+    assert not llm.breakers[m.agent].is_open()
+
+
+def test_light_chain_falls_back_for_the_classifier():
+    m = load_settings().models
+    llm = scripted_llm({m.light: ServerError(500, {"error": {}})})
+    assert llm.invoke("light", [HumanMessage("x")]).content == f"from {m.light_fallbacks[0]}"

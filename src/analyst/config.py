@@ -49,6 +49,11 @@ class LLMRetry(_Strict):
     request_timeout_s: float = Field(gt=0)
 
 
+class CircuitBreakerSettings(_Strict):
+    failures: int = Field(ge=1)
+    cooldown_s: float = Field(gt=0)
+
+
 class BigQuerySettings(_Strict):
     dataset: str
     max_bytes_processed: int = Field(gt=0)  # dry-run gate, lowerable for the demo (D2.3)
@@ -73,6 +78,7 @@ class Settings(BaseModel):
     models: Models
     budgets: Budgets
     llm_retry: LLMRetry
+    circuit_breaker: CircuitBreakerSettings
     bigquery: BigQuerySettings
     memory: Memory
     charts: Charts

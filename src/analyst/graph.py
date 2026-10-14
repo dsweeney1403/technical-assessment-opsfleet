@@ -71,6 +71,9 @@ def _charge(budget: Budget, stats: CallStats) -> Budget:
     return budget.model_copy(update={
         "tokens_used": budget.tokens_used + stats.input_tokens + stats.output_tokens,
         "llm_retries": budget.llm_retries + stats.retries,
+        "models_used": [*budget.models_used, *stats.models_used],
+        "fallback_used": budget.fallback_used or stats.fallback_used,
+        "breaker_opens": budget.breaker_opens + stats.breaker_opens,
     })
 
 

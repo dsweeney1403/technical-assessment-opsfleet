@@ -1,10 +1,15 @@
-"""Gemini client with transient-only retries (D2.8).
+"""Gemini client: transient-only retries, fallback chain, circuit breaker.
 
 Retries 429, 5xx, timeouts and connection resets with exponential backoff,
 full jitter and the server's retry delay, up to max_attempts and a total wait
-cap. Any other 4xx fails the same way every time, so it stops at once with a
-message pointing to `doctor`. Retries are counted in CallStats, never against
-the agent's tool-call budget. Fallback chain and breaker arrive in phase 3.
+cap (D2.8). Any other 4xx fails the same way every time, so it stops at once
+with a message pointing to `doctor`. Retries are counted in CallStats, never
+against the agent's tool-call budget.
+
+When a model's retries run out, the next model in the role's chain is tried
+(D2.10, D2.11). A breaker on each chain's primary model opens after N
+consecutive transient errors and skips that model for a cooldown (D2.12).
+Fallback use is recorded in CallStats for the trace only.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import random
 import re
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeVar
 
 import httpx
@@ -21,7 +26,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 
-from analyst.config import LLMRetry, Settings
+from analyst.config import CircuitBreakerSettings, LLMRetry, Settings
 
 Role = Literal["agent", "light"]
 T = TypeVar("T")
@@ -44,7 +49,7 @@ class LLMFatalError(LLMError):
 
 
 class LLMUnavailableError(LLMError):
-    """Transient errors continued after every retry."""
+    """Transient errors continued after every retry, on every model in the chain."""
 
 
 class LLMOutputError(LLMError):
@@ -56,6 +61,9 @@ class CallStats:
     retries: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    models_used: list[str] = field(default_factory=list)
+    fallback_used: bool = False
+    breaker_opens: int = 0
 
     def add_usage(self, message: AIMessage) -> None:
         usage = getattr(message, "usage_metadata", None) or {}
@@ -118,7 +126,9 @@ def with_retries(
     stats: CallStats | None = None,
     sleep: Callable[[float], None] = time.sleep,
     rand: Callable[[], float] = random.random,
+    on_transient: Callable[[], bool] | None = None,
 ) -> T:
+    """`on_transient` is told about each transient error; returning True stops retrying (breaker open)."""
     waited = 0.0
     for attempt in range(1, policy.max_attempts + 1):
         try:
@@ -128,6 +138,8 @@ def with_retries(
                 if status_code(exc) is not None:
                     raise LLMFatalError(status_code(exc), _detail(exc)) from exc
                 raise
+            if on_transient is not None and on_transient():
+                raise LLMUnavailableError(_detail(exc)) from exc
             if attempt == policy.max_attempts:
                 raise LLMUnavailableError(_detail(exc)) from exc
             suggested = retry_after_s(exc) if policy.honour_retry_after else None
@@ -141,20 +153,53 @@ def with_retries(
     raise AssertionError("unreachable")
 
 
-class LLM:
-    """Role-based access to Gemini models. Model IDs come from settings."""
+class CircuitBreaker:
+    """Opens after `failures` consecutive transient errors; stays open for `cooldown_s` (D2.12)."""
 
-    def __init__(self, settings: Settings, api_key: str, chat_factory=ChatGoogleGenerativeAI):
+    def __init__(self, policy: CircuitBreakerSettings, clock: Callable[[], float] = time.monotonic):
+        self._policy = policy
+        self._clock = clock
+        self._failures = 0
+        self._open_until = 0.0
+
+    def is_open(self) -> bool:
+        return self._clock() < self._open_until
+
+    def record_failure(self) -> bool:
+        """Count a transient error. True when this one opens the breaker."""
+        self._failures += 1
+        if self._failures >= self._policy.failures:
+            self._failures = 0
+            self._open_until = self._clock() + self._policy.cooldown_s
+            return True
+        return False
+
+    def record_success(self) -> None:
+        self._failures = 0
+
+
+class LLM:
+    """Role-based access to Gemini models. Model IDs and chains come from settings."""
+
+    def __init__(self, settings: Settings, api_key: str, chat_factory=ChatGoogleGenerativeAI,
+                 clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep):
         self._settings = settings
         self._api_key = api_key
         self._factory = chat_factory
+        self._sleep = sleep
         self._models: dict[str, object] = {}
+        primaries = {settings.models.agent, settings.models.light}
+        self.breakers = {m: CircuitBreaker(settings.circuit_breaker, clock) for m in primaries}
 
     def model_id(self, role: Role) -> str:
         return getattr(self._settings.models, role)
 
-    def _chat(self, role: Role):
-        model_id = self.model_id(role)
+    def chain(self, role: Role) -> list[str]:
+        models = self._settings.models
+        fallbacks = models.agent_fallbacks if role == "agent" else models.light_fallbacks
+        return list(dict.fromkeys([self.model_id(role), *fallbacks]))
+
+    def _chat_for(self, model_id: str):
         if model_id not in self._models:
             self._models[model_id] = self._factory(
                 model=model_id,
@@ -164,6 +209,41 @@ class LLM:
             )
         return self._models[model_id]
 
+    def _chat(self, role: Role):
+        return self._chat_for(self.model_id(role))
+
+    def _run(self, role: Role, call: Callable[[object], T], stats: CallStats | None) -> T:
+        """Try each model in the role's chain until one answers."""
+        stats = stats if stats is not None else CallStats()
+        chain = self.chain(role)
+        last: LLMUnavailableError | None = None
+        for model_id in chain:
+            breaker = self.breakers.get(model_id)
+            if breaker is not None and breaker.is_open():
+                continue
+
+            def on_transient(breaker=breaker) -> bool:
+                if breaker is None:
+                    return False
+                if breaker.record_failure():
+                    stats.breaker_opens += 1
+                    return True
+                return False
+
+            chat = self._chat_for(model_id)
+            try:
+                out = with_retries(lambda: call(chat), self._settings.llm_retry, stats,
+                                   sleep=self._sleep, on_transient=on_transient)
+            except LLMUnavailableError as exc:
+                last = exc
+                continue
+            if breaker is not None:
+                breaker.record_success()
+            stats.models_used.append(model_id)
+            stats.fallback_used = stats.fallback_used or model_id != chain[0]
+            return out
+        raise last or LLMUnavailableError("Every model is skipped while the breaker is open.")
+
     def invoke(
         self,
         role: Role,
@@ -171,9 +251,11 @@ class LLM:
         tools: Sequence | None = None,
         stats: CallStats | None = None,
     ) -> AIMessage:
-        chat = self._chat(role)
-        runnable = chat.bind_tools(list(tools)) if tools else chat
-        message = with_retries(lambda: runnable.invoke(list(messages)), self._settings.llm_retry, stats)
+        def call(chat):
+            runnable = chat.bind_tools(list(tools)) if tools else chat
+            return runnable.invoke(list(messages))
+
+        message = self._run(role, call, stats)
         if stats is not None:
             stats.add_usage(message)
         return message
@@ -185,8 +267,8 @@ class LLM:
         messages: Sequence[BaseMessage],
         stats: CallStats | None = None,
     ) -> S:
-        runnable = self._chat(role).with_structured_output(schema, include_raw=True)
-        out = with_retries(lambda: runnable.invoke(list(messages)), self._settings.llm_retry, stats)
+        out = self._run(role, lambda chat: chat.with_structured_output(schema, include_raw=True).invoke(list(messages)),
+                        stats)
         if stats is not None and out.get("raw") is not None:
             stats.add_usage(out["raw"])
         if out.get("parsing_error") or out.get("parsed") is None:

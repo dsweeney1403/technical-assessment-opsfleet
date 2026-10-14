@@ -55,7 +55,12 @@ class Budget(BaseModel):
     tool_calls_used: int = 0
     tokens_used: int = 0
     llm_retries: int = 0
-    last_error_code: str | None = None  # stuck rule (D2.2), used from phase 3
+    last_error_code: str | None = None  # stuck rule (D2.2): the last run_sql error code in a row
+    stuck: bool = False  # same code twice in a row: answer now, no more tools
+    bq_down: bool = False  # BigQuery retries ran out this turn (D2.13)
+    models_used: list[str] = Field(default_factory=list)  # for the trace (D2.10)
+    fallback_used: bool = False
+    breaker_opens: int = 0
 
 
 class Draft(BaseModel):
