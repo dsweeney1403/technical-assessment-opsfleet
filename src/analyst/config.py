@@ -77,6 +77,16 @@ class Charts(_Strict):
     dir: Path
 
 
+class Reports(_Strict):
+    backend: Literal["sqlite"] = "sqlite"  # production: firestore (D3.10)
+    sqlite_path: Path = Path("reports.db")
+    download_dir: Path = Path("reports")
+    sections_in_parallel: Literal[False] = False  # D3.5: sequential in the prototype
+    max_sections: int = Field(4, ge=1)
+    soft_delete: Literal[True] = True  # D3.23
+    purge_after_days: int = Field(30, ge=1)
+
+
 class Tracing(_Strict):
     exporter: Literal["jsonl"] = "jsonl"  # production: otel (D2.23)
     dir: Path = Path("traces")
@@ -101,6 +111,7 @@ class Settings(BaseModel):
     memory: Memory
     charts: Charts
     tracing: Tracing = Field(default_factory=Tracing)
+    reports: Reports = Field(default_factory=Reports)
     faults: FaultSettings = Field(default_factory=FaultSettings)
 
 

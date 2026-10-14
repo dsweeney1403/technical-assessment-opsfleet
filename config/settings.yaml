@@ -61,7 +61,7 @@ reports:                              # Group 3
   sqlite_path: reports.db
   download_dir: reports/              # D3.14, gitignored
   sections_in_parallel: false         # D3.5
-  max_sections: 6                     # Proposed, not yet decided
+  max_sections: 4                     # Daniel 2026-10-14: keeps a report near 11 Flash requests on the free tier
   soft_delete: true                   # D3.23
   purge_after_days: 30                # D3.23
 
