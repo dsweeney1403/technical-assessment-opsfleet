@@ -1,0 +1,24 @@
+# Delete-reply classifier component set (D3.20, D5.1): the reply to a delete confirmation, exact decision.
+# A yes with any condition is narrow; a doubting or sarcastic yes is never yes.
+shown: |
+  This deletes 'Levi's jeans review' and its earlier drafts.
+  This deletes 'Outerwear review' and its earlier drafts.
+  This deletes 'Q1 2026 report' and its earlier drafts.
+
+  Reply yes to delete, cancel to keep them, or tell me which to keep.
+cases:
+  - {id: d01, reply: "yes", decision: "yes"}
+  - {id: d02, reply: "go for it", decision: "yes"}
+  - {id: d03, reply: "Yes please, delete them.", decision: "yes"}
+  - {id: d04, reply: "do it", decision: "yes"}
+  - {id: d05, reply: "yes but only Levi's", decision: narrow}
+  - {id: d06, reply: "only the jeans one", decision: narrow}
+  - {id: d07, reply: "keep the Q1 report, delete the rest", decision: narrow}
+  - {id: d08, reply: "just the first two", decision: narrow}
+  - {id: d09, reply: "cancel", decision: cancel}
+  - {id: d10, reply: "no, keep them", decision: cancel}
+  - {id: d11, reply: "never mind", decision: cancel}
+  - {id: d12, reply: "sure, why would I want that?", decision: unclear}
+  - {id: d13, reply: "what's in the outerwear one?", decision: unclear}
+  - {id: d14, reply: "hmm", decision: unclear}
+  - {id: d15, reply: "yes? I'm not sure, what happens to the charts?", decision: unclear}

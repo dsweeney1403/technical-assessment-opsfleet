@@ -11,6 +11,8 @@
 /traces/
 /charts/
 /reports/
+/evals/results/*
+!/evals/results/baseline.json
 *.db
 *.sqlite
 *.sqlite3

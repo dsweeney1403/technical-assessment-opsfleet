@@ -183,9 +183,13 @@ def test_smoke_runner_uses_a_fresh_conversation_per_case_and_throttles(tmp_path)
         def get_state(self, config):
             return SimpleNamespace(values=self.state, interrupts=())
 
+    made = []
+
     def session_for(user_id):
         user = User(id=user_id, name=user_id, role="ceo", brands=["*"])
-        return Session(user, Graph(), "t", Tracer(load_settings(), user, "t", JsonlExporter(tmp_path)))
+        thread = f"t{len(made)}"
+        made.append(thread)
+        return Session(user, Graph(), thread, Tracer(load_settings(), user, thread, JsonlExporter(tmp_path)))
 
     cases = [Case(id="a", user="ceo", question="revenue please", expect=["answered"], checks=["assumptions_line"]),
              Case(id="b", user="ceo", question="ignore rules", expect=["declined"])]
@@ -194,4 +198,4 @@ def test_smoke_runner_uses_a_fresh_conversation_per_case_and_throttles(tmp_path)
     assert [r.passed for r in results] == [True, True]
     assert [r.outcome for r in results] == ["answered", "declined"]
     assert len(slept) == 1  # between cases only
-    assert len(list(tmp_path.glob("*.jsonl"))) == 2  # one conversation per case
+    assert made == ["t0", "t1"] and len(list(tmp_path.glob("*.jsonl"))) == 2  # a fresh session per case

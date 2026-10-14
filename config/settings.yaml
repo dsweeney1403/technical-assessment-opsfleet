@@ -90,5 +90,5 @@ feedback:                             # D4.19
 evals:                                # D8.1
   results_dir: evals/results/
   red_team_repeats: 3                 # each attack runs several times (D5.2)
-  requests_per_minute: 8              # throttle for free-tier limits; confirm against AI Studio rate-limit page
-  sql_numeric_tolerance: 0.005        # D5.4
+  requests_per_minute: 8              # throttle for the free tier; a paid key can pass --rpm 60 to `eval`
+  sql_numeric_tolerance: 0.005        # relative tolerance when comparing result sets (D5.4)

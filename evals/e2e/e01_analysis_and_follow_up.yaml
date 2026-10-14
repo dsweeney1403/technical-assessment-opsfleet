@@ -1,0 +1,12 @@
+# Schema question, analysis with its assumptions line, a follow-up, then a chart of a stored result.
+id: e01_analysis_and_follow_up
+user: ceo
+turns:
+  - say: What data do you have, and what can I ask about it?
+    expect: {outcome: [answered], contains: [sales], no_em_dash: true}
+  - say: What was revenue by month in 2025?
+    expect: {outcome: [answered, partial], assumptions_line: true, no_em_dash: true}
+  - say: Now just the last three months of 2025.
+    expect: {outcome: [answered, partial], contains: [December]}
+  - say: Make that a chart.
+    expect: {outcome: [answered, partial], chart: true}

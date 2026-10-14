@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import time
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -63,27 +62,17 @@ def check(case: Case, record: dict) -> list[str]:
 
 def run(cases: list[Case], session_for: Callable[[str], object], requests_per_minute: int,
         sleep: Callable[[float], None] = time.sleep) -> list[Result]:
-    """One fresh conversation per case, throttled for free-tier rate limits."""
-    sessions: dict[str, object] = {}
+    """One fresh session per case, throttled for free-tier rate limits."""
+    from analyst.evals.harness import Conversation
+    from analyst.evals.runner import Throttle
+
+    throttle = Throttle(requests_per_minute, sleep=sleep)
     results = []
     for i, case in enumerate(cases):
-        if case.user not in sessions:
-            sessions[case.user] = session_for(case.user)
-        session = sessions[case.user]
-        session.thread_id = uuid.uuid4().hex  # a fresh conversation per case
-        session.tracer.conversation_id = session.thread_id
-        payload = {"user_input": case.question, "user": session.user, "conversation_id": session.thread_id}
-        started = time.monotonic()
-        try:
-            with session.tracer.turn(session.graph, session.config, case.question) as config:
-                for _ in session.graph.stream(payload, config, stream_mode="updates"):
-                    pass
-        except Exception:
-            pass  # the trace already records the failure
-        record = session.tracer.last
+        turn = Conversation(session_for(case.user)).say(case.question)
+        record = turn.record or {"outcome": "failed", "reason": "INTERNAL", "trace_id": None, "totals": {}}
         results.append(Result(case=case, outcome=record["outcome"], reason=record["reason"],
-                              trace_id=record["trace_id"], failures=check(case, record)))
+                              trace_id=record["trace_id"] or "", failures=check(case, {**record, "answer": turn.text})))
         if i < len(cases) - 1:
-            budget = 60 / requests_per_minute * max(1, record["totals"].get("llm_calls", 1))
-            sleep(max(0.0, budget - (time.monotonic() - started)))
+            throttle.after(record["totals"].get("llm_calls", 1))
     return results

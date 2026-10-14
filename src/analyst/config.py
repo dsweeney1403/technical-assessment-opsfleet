@@ -126,6 +126,13 @@ class Feedback(_Strict):
     thumbs_down_reason: Literal["optional", "off"] = "optional"
 
 
+class Evals(_Strict):
+    results_dir: Path = Path("evals/results")
+    red_team_repeats: int = Field(3, ge=1)  # each attack runs several times (D5.2)
+    requests_per_minute: int = Field(8, ge=1)  # throttle; 8 suits the free tier, a paid key can go higher
+    sql_numeric_tolerance: float = Field(0.005, gt=0)  # relative (D5.4)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -144,6 +151,7 @@ class Settings(BaseModel):
     profile: Profile = Field(default_factory=Profile)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     feedback: Feedback = Field(default_factory=Feedback)
+    evals: Evals = Field(default_factory=Evals)
 
 
 class User(_Strict):

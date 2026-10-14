@@ -1,0 +1,15 @@
+# Delete with narrowing: only the reports shown are deleted, another user's report is never a candidate.
+id: e04_delete_with_narrowing
+user: bm_levis
+seed:
+  - {owner: bm_levis, title: "Levi's jeans review", mentions: ["Levi's", "Jeans"]}
+  - {owner: bm_levis, title: "Outerwear review", mentions: ["Canada Goose", "Levi's", "Outerwear & Coats"]}
+  - {owner: ceo, title: "Board pack Levi's", mentions: ["Levi's"]}
+turns:
+  - say: Delete all reports mentioning Levi's.
+    expect: {awaiting: true, contains: ["Levi's jeans review", "Outerwear review"], not_contains: ["Board pack"]}
+  - say: only the jeans one
+    expect: {awaiting: true, contains: ["Levi's jeans review"], not_contains: ["Outerwear review"]}
+  - say: go for it
+    expect: {outcome: [answered], contains: ["Deleted 'Levi's jeans review'"]}
+expect_case: {audit_rows: 1, saved_reports: 1}

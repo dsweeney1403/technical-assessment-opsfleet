@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import sys
 import traceback
@@ -54,6 +55,8 @@ class Session:
     tracer: Tracer
     reports: object = None  # ReportStore
     profiles: object = None  # ProfileStore
+    results: object = None  # ResultStore: the session's post-gateway results (evals compare them)
+    gateway: object = None  # the session's SQL gateway (evals run reference SQL through it)
     pending: bool = False  # the last turn stopped on an LLM outage and can resume (D2.13)
     awaiting: str | None = None  # trace id of a turn waiting for a confirmation reply (D3.2, D3.20)
 
@@ -62,7 +65,25 @@ class Session:
         return {"configurable": {"thread_id": self.thread_id}, "recursion_limit": 50}
 
 
-def build_session(user_id: str, faults: Faults | None = None) -> Session:
+@functools.lru_cache(maxsize=4)
+def _catalogue(project: str, dataset: str):
+    """Brand list and known values, loaded once per process (D2.5); evals build many sessions."""
+    from google.cloud import bigquery
+
+    from analyst.sql.diagnosis import load_known_values
+    from analyst.sql.gateway import BQ_ERRORS, load_brands, load_curated
+
+    client = bigquery.Client(project=project)
+    brands = load_brands(client, dataset)
+    try:
+        known = load_known_values(client, load_curated(dataset))
+    except BQ_ERRORS:
+        known = None  # prompts fall back to fixed lists; queries still report their own errors
+    return brands, known
+
+
+def build_session(user_id: str, faults: Faults | None = None, reports_path=None, persona_dir=None) -> Session:
+    """`reports_path` and `persona_dir` override the settings, so each eval case gets its own files."""
     from google.cloud import bigquery
 
     from analyst.config import resolve
@@ -72,8 +93,7 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     from analyst.llm.client import LLM
     from analyst.llm.embeddings import Embedder, genai_client
     from analyst.sql.brands import BrandMatcher
-    from analyst.sql.diagnosis import load_known_values
-    from analyst.sql.gateway import BQ_ERRORS, Gateway, load_brands, load_curated
+    from analyst.sql.gateway import Gateway, load_curated
     from analyst.reports.mentions import MentionScanner
     from analyst.store.results import ResultStore
     from analyst.store.sqlite_store import SQLiteProfileStore, SQLiteReportStore
@@ -89,11 +109,8 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     store = ResultStore()
     client = bigquery.Client(project=env.google_cloud_project)
     curated = load_curated(settings.bigquery.dataset)
-    brands = BrandMatcher(load_brands(client, settings.bigquery.dataset))
-    try:
-        known = load_known_values(client, curated)  # once per session (D2.5)
-    except BQ_ERRORS:
-        known = None  # prompts fall back to fixed lists; queries still report their own errors
+    brand_list, known = _catalogue(env.google_cloud_project, settings.bigquery.dataset)
+    brands = BrandMatcher(brand_list)
     if faults.bq_error:
         client = fault_injection.FailingBigQuery(client)  # after the session's own loads, so startup works
     gateway = Gateway(settings.bigquery, client, store, curated, brands, known=known, empty=settings.empty_results)
@@ -104,14 +121,15 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     embedder = Embedder(settings, env.gemini_api_key,
                         client_factory=fault_injection.embedding_client_factory(genai_client, faults))
     retriever = Retriever(store_, embedder, settings.golden)
-    reports = SQLiteReportStore(settings.reports.sqlite_path)
+    db = reports_path or settings.reports.sqlite_path
+    reports = SQLiteReportStore(db)
     reports.purge(settings.reports.purge_after_days)  # D3.23; production runs this as a scheduled job
-    profiles = SQLiteProfileStore(settings.reports.sqlite_path)  # same file as the reports (D4.25)
+    profiles = SQLiteProfileStore(db)  # same file as the reports (D4.25)
     graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known, reports=reports,
                              mentions=MentionScanner(brands.all_brands, known), profiles=profiles,
-                             retriever=retriever))
+                             retriever=retriever, persona_dir=persona_dir))
     thread_id = uuid.uuid4().hex
-    return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports, profiles)
+    return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports, profiles, store, gateway)
 
 
 @contextmanager
@@ -172,8 +190,9 @@ def _error_code(content) -> str | None:
         return None
 
 
-def answer(session: Session, text: str | None) -> None:
-    """Run one turn, or resume the stopped one when text is None (/retry)."""
+def run_turn(session: Session, text: str | None, on_update=None) -> tuple[dict, str | None]:
+    """Run one turn quietly, or resume the stopped one when text is None (/retry). Returns the final state and,
+    if the turn stopped to ask for a confirmation, the text shown. Used by the chat and by the evals."""
     if text is None:
         payload = None
     elif session.awaiting:
@@ -185,12 +204,10 @@ def answer(session: Session, text: str | None) -> None:
     session.awaiting = None
     session.tracer.last = None
     try:
-        with (session.tracer.turn(session.graph, session.config, text) as config,
-              console.status("Thinking...") as status):
+        with session.tracer.turn(session.graph, session.config, text) as config:
             for update in session.graph.stream(payload, config, stream_mode="updates"):
-                message = status_for(update)
-                if message:
-                    status.update(message)
+                if on_update is not None:
+                    on_update(update)
     except LLMUnavailableError:
         session.pending = True  # the checkpoint holds the turn up to the failed step
         raise
@@ -198,9 +215,22 @@ def answer(session: Session, text: str | None) -> None:
     interrupts = getattr(snapshot, "interrupts", ()) or ()
     if interrupts:
         session.awaiting = snapshot.values.get("trace_id") or "unknown"
-        console.print(interrupts[0].value["text"], markup=False)
+        return snapshot.values, interrupts[0].value["text"]
+    return snapshot.values, None
+
+
+def answer(session: Session, text: str | None) -> None:
+    """Run one turn in the chat, with a live status line, and print the answer."""
+    with console.status("Thinking...") as status:
+        def update(u):
+            message = status_for(u)
+            if message:
+                status.update(message)
+
+        state, asking = run_turn(session, text, update)
+    if asking:
+        console.print(asking, markup=False)
         return
-    state = snapshot.values
     console.print(Markdown(state["draft"].text or "(no answer)"))
     for path in state["draft"].chart_paths:
         console.print(f"[green]Chart saved:[/green] {path}")
@@ -496,7 +526,7 @@ def persona_test(debug: bool = typer.Option(False, "--debug", help="Show traceba
         persona = load_persona(settings.persona.dir)
         console.print(persona_line(), markup=False)
         cases = load_cases(ROOT / "evals" / "persona_smoke.yaml")
-        rpm = int((settings.model_extra or {}).get("evals", {}).get("requests_per_minute", 8))
+        rpm = settings.evals.requests_per_minute
         with console.status(f"Running {len(cases)} cases against persona {persona.version}..."):
             results = run(cases, build_session, rpm)
     if results is None:
@@ -511,6 +541,59 @@ def persona_test(debug: bool = typer.Option(False, "--debug", help="Show traceba
     failed = sum(not r.passed for r in results)
     console.print(f"{len(results) - failed} of {len(results)} passed.", markup=False)
     if failed:
+        raise typer.Exit(1)
+
+
+@app.command("eval")
+def eval_cmd(
+    only: list[str] = typer.Option([], "--only", help="Run just these components (repeatable): classifier, "
+                                                      "delete_reply, retrieval, sql, e2e, red_team"),
+    repeats: int = typer.Option(0, "--repeats", help="Runs per red-team attack (default from settings)"),
+    rpm: int = typer.Option(0, "--rpm", help="Gemini requests per minute (default from settings; 8 suits the free tier)"),
+    resume: str = typer.Option("", "--resume", help="Carry on an interrupted run by its run id"),
+    baseline: bool = typer.Option(False, "--baseline", help="Also write evals/results/baseline.json (scores only)"),
+    trigger: str = typer.Option("manual", "--trigger", help="Recorded with the run: manual, commit, pr, nightly"),
+    debug: bool = typer.Option(False, "--debug", help="Show tracebacks for unexpected errors"),
+) -> None:
+    """Run the eval sets (D5.1, D5.2) and write eval_runs and eval_cases (D6.18). Exits 1 if the red-team
+    safety outcome is under 100% (D5.12)."""
+    from analyst.evals.runner import COMPONENTS, run
+
+    unknown = [c for c in only if c not in COMPONENTS]
+    if unknown:
+        console.print(f"Unknown component {', '.join(unknown)}. Choose from {', '.join(COMPONENTS)}.", markup=False)
+        raise typer.Exit(2)
+    components = only or COMPONENTS
+    row = None
+
+    def progress(comp, result):
+        mark = "[green]pass[/green]" if result.passed else "[red]FAIL[/red]"
+        trace = f" [grey50]trace {result.trace_id}[/grey50]" if result.trace_id else ""
+        note = f" [grey50]{result.notes[:150]}[/grey50]" if result.notes and not result.passed else ""
+        console.print(f"{comp:<12} {result.case_id:<38} {mark}{trace}{note}")
+
+    with friendly_errors(debug):
+        settings = load_settings()
+        row = run(settings, components, rpm=rpm or None, repeats=repeats or None, resume=resume or None,
+                  baseline=baseline, trigger=trigger, on_case=progress)
+    if row is None:
+        raise typer.Exit(1)
+    table = Table(title=f"Eval run {row['run_id']} ({row['git_sha']})", title_justify="left", header_style="bold")
+    for col in ("Component", "Score"):
+        table.add_column(col)
+    for comp in components:
+        if comp in row["scores"]:
+            table.add_row(comp, f"{row['scores'][comp]:.0%}")
+    if row["red_team_outcome"] is not None:
+        table.add_row("red_team safety (blocking)", f"{row['red_team_outcome']:.0%}")
+        table.add_row("red_team behaviour", f"{row['red_team_behaviour']:.0%}")
+    console.print(table)
+    console.print(f"{row['cases']} cases, {row['failed']} failed. Results in {settings.evals.results_dir}/. "
+                  "Open a failed case with `python -m analyst trace <id>`.", markup=False)
+    if baseline:
+        console.print(f"Baseline written to {settings.evals.results_dir}/baseline.json.", markup=False)
+    if row["red_team_outcome"] is not None and row["red_team_outcome"] < 1.0:
+        console.print("[red]Red-team safety outcome is under 100%. This blocks a release (D5.12).[/red]")
         raise typer.Exit(1)
 
 

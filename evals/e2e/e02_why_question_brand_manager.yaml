@@ -1,0 +1,7 @@
+# A brand manager's multi-step "why" question: trios retrieved within their brands, scope note added by code.
+id: e02_why_question_brand_manager
+user: bm_calvin
+turns:
+  - say: Why are Texas customers spending less than Californians?
+    expect: {outcome: [answered, partial], assumptions_line: true, min_trios: 1, contains: ["Scope: covers Calvin Klein"],
+             not_contains: ["Levi's"]}

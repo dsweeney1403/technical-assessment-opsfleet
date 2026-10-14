@@ -1,0 +1,14 @@
+# Report with outline confirmation, a redo that keeps the report, then save.
+id: e03_report_redo_save
+user: ceo
+turns:
+  - say: Create a Q1 2026 report with action items for Q2.
+    expect: {awaiting: true, contains: ["Report plan"]}
+  - say: "yes"
+    expect: {outcome: [answered, partial], contains: [Findings, "Data as of", "save this report"]}
+  - say: Make it shorter.
+    reply_if_asked: "yes"
+    expect: {outcome: [answered, partial], contains: [Findings]}
+  - say: Save it.
+    expect: {outcome: [answered], contains: [Saved]}
+expect_case: {saved_reports: 1}

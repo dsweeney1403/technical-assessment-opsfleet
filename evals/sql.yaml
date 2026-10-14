@@ -1,0 +1,99 @@
+# SQL execution accuracy (D5.4): the agent's results against a reference, run through the same gateway as the
+# case's user. Several cases are built so wrong logic gives a different answer (G5.4): counting cancelled or
+# returned items as revenue, the Brasil spelling, registered customers versus buyers, a brand manager's own
+# share of mixed-brand orders. Analysts own these keys (D5.3, D5.5).
+cases:
+  - id: s01_revenue_2025
+    user: ceo
+    question: What was total revenue in 2025?
+    reference: |
+      SELECT ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s02_monthly_revenue_2025
+    user: ceo
+    question: Show revenue by month for 2025.
+    reference: |
+      SELECT FORMAT_DATE('%Y-%m', DATE(order_created_at)) AS month, ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+      GROUP BY month
+  - id: s03_active_customers_2025
+    user: ceo
+    question: How many active customers did we have in 2025?
+    reference: |
+      SELECT COUNT(DISTINCT customer_id) AS active_customers FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s04_aov_2025
+    user: ceo
+    question: What was our average order value in 2025?
+    reference: |
+      SELECT ROUND(SUM(sale_price) / COUNT(DISTINCT order_id), 2) AS aov FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s05_return_rate_2025
+    user: ceo
+    question: What was the return rate in 2025?
+    reference: |
+      SELECT ROUND(COUNTIF(status = 'Returned') / COUNTIF(status != 'Cancelled'), 4) AS return_rate FROM sales
+      WHERE EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s06_cancellation_rate_2025
+    user: ceo
+    question: What share of items were cancelled in 2025?
+    reference: |
+      SELECT ROUND(COUNTIF(status = 'Cancelled') / COUNT(*), 4) AS cancellation_rate FROM sales
+      WHERE EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s07_top_categories_2025
+    user: ceo
+    question: What were the top 5 categories by revenue in 2025?
+    reference: |
+      SELECT category, ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+      GROUP BY category ORDER BY revenue DESC LIMIT 5
+  - id: s08_department_revenue_2025
+    user: ceo
+    question: How did revenue split between the Men and Women departments in 2025?
+    reference: |
+      SELECT department, ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+      GROUP BY department
+  - id: s09_brazil_revenue_2025
+    user: ceo
+    question: What was revenue from customers in Brazil in 2025?
+    reference: |
+      SELECT ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND country = 'Brasil'
+        AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s10_margin_2025
+    user: ceo
+    question: What was our gross margin in 2025?
+    reference: |
+      SELECT ROUND(SUM(sale_price - cost) / SUM(sale_price), 4) AS margin FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s11_registered_customers_by_age
+    user: ceo
+    question: How many registered customers do we have in each age band?
+    reference: |
+      SELECT age_band, COUNT(*) AS customers FROM customers GROUP BY age_band
+  - id: s12_products_never_sold
+    user: ceo
+    question: How many products in the catalogue have never been sold?
+    reference: |
+      SELECT COUNT(*) AS never_sold FROM products WHERE product_id NOT IN (SELECT product_id FROM sales)
+  - id: s13_traffic_source_revenue_2025
+    user: ceo
+    question: What was revenue by traffic source in 2025?
+    reference: |
+      SELECT traffic_source, ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+      GROUP BY traffic_source
+  - id: s14_calvin_aov_2025
+    user: bm_calvin
+    question: What was our average order value in 2025?
+    reference: |
+      SELECT ROUND(SUM(sale_price) / COUNT(DISTINCT order_id), 2) AS aov FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+  - id: s15_levis_revenue_by_brand_2025
+    user: bm_levis
+    question: How much revenue did each of my brands make in 2025?
+    reference: |
+      SELECT brand, ROUND(SUM(sale_price), 2) AS revenue FROM sales
+      WHERE status NOT IN ('Cancelled', 'Returned') AND EXTRACT(YEAR FROM order_created_at) = 2025
+      GROUP BY brand
