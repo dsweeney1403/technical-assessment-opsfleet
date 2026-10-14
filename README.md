@@ -1,14 +1,30 @@
 # OpsFleet Analyst
 
-A data analysis chat agent for a retail company's executives. Built with LangGraph, Gemini and BigQuery (`bigquery-public-data.thelook_ecommerce`).
+A data analysis chat agent for a retail company's executives. Ask about sales, customers and products in plain words, discuss the answers, and turn them into reports with action items. Built with LangGraph, Gemini and BigQuery (`bigquery-public-data.thelook_ecommerce`), run from the command line.
 
-Work in progress. Full setup, usage and design docs come later.
+The prototype implements safety and PII masking, report deletion with confirmation, resilience and observability in full, plus seeded knowledge retrieval, learned preferences and a swappable persona. The production design covers everything else.
+
+| Document | What's in it |
+|---|---|
+| [Architecture](docs/architecture.md) | The production diagram, every service and why, how a turn flows, prototype against production, why LangGraph and Gemini |
+| [Requirements](docs/requirements.md) | How each of the brief's requirements is met, extensibility, traceability |
+| [Errors and fallbacks](docs/errors-and-fallbacks.md) | Every error code, who handles it, retries, fallbacks, outages |
+| [Evaluation](docs/evaluation.md) | Testing before deployment, report intent, UX, and the prototype's eval baseline |
+| [Example run](docs/example-run.md) | A recorded session covering every feature |
+| [Trio calibration](docs/golden-calibration.md) | How the retrieval threshold was set |
 
 ## Setup
 
-You need Python 3.12 or newer, a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), and Google Cloud credentials for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, no credit card needed. Nothing is deployed: the agent runs locally and queries the public dataset.
+You need:
+- Python 3.12, 3.13 or 3.14.
+- A free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+- Google Cloud credentials for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, with no credit card needed.
+
+Nothing is deployed. The agent runs locally, queries the public dataset (about 6 MB per query, inside the free tier) and keeps everything else in local files created on first run.
 
 ```bash
+git clone https://github.com/dsweeney1403/technical-assessment-opsfleet.git
+cd technical-assessment-opsfleet
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -18,7 +34,21 @@ python -m analyst doctor                  # checks everything and names the fix 
 python -m analyst chat --user ceo
 ```
 
-Run the tests with `pytest`. They are mocked and need no credentials.
+Run `doctor` first: it checks your key, your BigQuery access, the models and the config, and names the exact fix for anything wrong. If `GOOGLE_CLOUD_PROJECT` isn't set in `.env`, the project attached to your Google Cloud credentials is used.
+
+Three demo users are in `config/users.yaml`:
+
+| User | Sees |
+|---|---|
+| `ceo` | Every brand |
+| `bm_calvin` | Calvin Klein only |
+| `bm_levis` | Levi's and Canada Goose |
+
+Try a scoped user with `python -m analyst chat --user bm_calvin`. In the chat, `/help` lists the commands.
+
+**On the free tier:** one analysis question uses about 5 to 10 Gemini requests, and a report more. The free tier limits requests per minute and per day, so check your limits in AI Studio. When a limit is hit, the agent retries, then falls back to another model. If every model is limited, it says so plainly, and `/retry` picks the question up later.
+
+Run the tests with `pytest`. They are mocked and need no credentials, and they also run on every push in GitHub Actions.
 
 ## Trying the failure handling
 
@@ -66,6 +96,15 @@ Ask for a report in plain words, for example "Create a Q1 report with action ite
 Deleting is always confirmed. Say "delete all reports mentioning Levi's" and the agent lists what that matches. Reply yes to delete them, cancel to keep them, or narrow the list ("only the jeans one"), which shows the shorter list for a fresh yes. Only the reports shown are deleted. A delete is soft: an admin can restore it for 30 days, and every delete is recorded in an audit table with the titles, the request and the trace id.
 
 Reports and the audit table live in `reports.db`, a local SQLite file that is gitignored.
+
+## Evaluating the agent
+
+`python -m analyst eval` runs the eval sets against the real models and data:
+- The intent classifier, the delete-reply classifier, trio retrieval and SQL accuracy.
+- Five end-to-end conversations.
+- A red team of 16 attacks, each run three times.
+
+It prints a score per set and the red-team safety outcome, which must be 100%: the command exits with code 1 otherwise. Results are written as `eval_runs` and `eval_cases` files in `evals/results/`. Open any failed case with `python -m analyst trace <id>`. The first baseline is committed in `evals/results/baseline.json`. A full run is about 400 Gemini requests, so on the free tier run one set at a time with `--only`. See [evaluation](docs/evaluation.md).
 
 ## Definitions, worked examples and tone
 
