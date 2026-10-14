@@ -122,6 +122,8 @@ def whoami(user: User) -> str:
 def status_for(update: dict) -> str | None:
     """Status line text for a graph update, so a longer turn never looks frozen (D2.5)."""
     for node, delta in update.items():
+        if not isinstance(delta, dict):
+            continue  # e.g. "__interrupt__" carries a tuple
         messages = (delta or {}).get("turn_messages") or []
         last = messages[-1] if messages else None
         if node == "agent" and isinstance(last, AIMessage) and last.tool_calls:

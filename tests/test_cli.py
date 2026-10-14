@@ -158,6 +158,7 @@ def test_status_line_text_for_updates():
     assert cli.status_for({"tools": {"turn_messages": [query, bad]}}) == "Checking the query..."
     assert cli.status_for({"output_check": {"turn_messages": [HumanMessage("fix")]}}) == "Checking the answer..."
     assert cli.status_for({"classify": {}}) is None
+    assert cli.status_for({"__interrupt__": (object(),)}) is None
 
 
 class ConfirmingGraph(FakeGraph):

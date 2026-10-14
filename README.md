@@ -50,3 +50,18 @@ The tree shows each step: the intent classifier, every agent step with its model
 In the chat, `/stats` shows metrics for the session in two views. The business view covers outcome rates, retries, fallback use, tokens, bytes and p50 and p95 latency. The engineering view covers first-attempt SQL success, repairs, stuck-rule fires, empty results, security events and figures removed by the grounding check.
 
 Traces are JSONL files in `traces/`, one per conversation. They hold what the model saw, never raw BigQuery rows, and they are gitignored.
+
+## Reports
+
+Ask for a report in plain words, for example "Create a Q1 report with action items for Q2".
+
+1. The agent plans an outline. If any section needs new queries, it shows the outline and waits. Reply yes to run it, cancel to stop, or say what to change and it plans again. A report built only from results already in the chat runs straight away.
+2. Each section runs its own short analysis, then the report is written: an assumptions line, the data's as-of time, findings, action items and next questions.
+3. Every action item has to rest on a finding or on something you told the agent. Code checks this. An action with nothing behind it moves to Next questions as an offer to look into it. Suggested targets are labelled as suggestions.
+4. Say "save it" to keep the report. "Make it shorter" or "add a section on returns" creates a new version of the same report.
+
+`/reports` lists your saved reports and `/download <number>` writes one to `reports/` as markdown, with its charts alongside. You only ever see your own reports. If your brand access changes, reports covering brands you no longer have are hidden until access returns.
+
+Deleting is always confirmed. Say "delete all reports mentioning Levi's" and the agent lists what that matches. Reply yes to delete them, cancel to keep them, or narrow the list ("only the ones about Levi's"), which shows the shorter list for a fresh yes. Only the reports shown are deleted. A delete is soft: an admin can restore it for 30 days, and every delete is recorded in an audit table with the titles, the request and the trace id.
+
+Reports and the audit table live in `reports.db`, a local SQLite file that is gitignored.
