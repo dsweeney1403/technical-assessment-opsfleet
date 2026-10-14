@@ -34,4 +34,4 @@ Each flag makes one dependency fail on purpose, so you can see the agent recover
 python -m analyst chat --user ceo --simulate-llm-429
 ```
 
-To see the cost limit fire for real, set `bigquery.max_bytes_processed: 15000000` in `config/settings.yaml` and ask for every column of the sales table. That query scans about 20 MB and is refused; the agent narrows it to the columns it needs (about 10 MB) and runs it. Leave `maximum_bytes_billed` as it is: BigQuery bills every sales query at least 42 MB.
+To see the cost limit fire for real, set `bigquery.max_bytes_processed: 12000000` in `config/settings.yaml` and ask "Break down revenue and margin by brand, category, department, state, age band and traffic source". That query scans about 14 MB and is refused; the agent drops dimensions until the query fits and says what it couldn't include. Leave `maximum_bytes_billed` as it is: BigQuery bills every sales query at least 42 MB.
