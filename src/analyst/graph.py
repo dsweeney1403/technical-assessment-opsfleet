@@ -30,7 +30,7 @@ from analyst.safety.classifier import classify
 from analyst.safety.declines import DECLINES, SECURITY_REASONS, no_access, scope_note
 from analyst.sql.brands import BrandMatcher
 from analyst.sql.diagnosis import KnownValues
-from analyst.sql.gateway import Gateway, SafetyStop
+from analyst.sql.gateway import Gateway, GatewayUnavailableError, SafetyStop
 from analyst.state import AgentState, Budget, Draft, Intent, SecurityEvent
 from analyst.store.results import ResultStore
 from analyst.tools.chart import make_chart_tool
@@ -56,6 +56,16 @@ BUDGET_SPENT = (
     "The tool budget for this turn is used up. Answer now with the results you have, "
     "and say plainly what you could not get."
 )
+STUCK = (
+    "The same query error came back twice in a row, so stop retrying it. Answer now with the results you have, "
+    "and say plainly what you could not get."
+)
+BQ_DOWN = json.dumps({"error": {
+    "code": "BQ_DOWN",
+    "message": "BigQuery is unavailable right now.",
+    "hint": "Run no more queries this turn. compute and make_chart still work on stored results. "
+            "Answer with the results you have and say plainly what you couldn't fetch. The user can try again later.",
+}})
 
 
 @dataclass
@@ -161,8 +171,10 @@ def build_graph(deps: Deps, checkpointer=None):
         messages = [SystemMessage(system), *state["messages"], HumanMessage(state["user_input"]),
                     *state["turn_messages"]]
         budget = state["budget"]
-        if budget.tool_calls_used >= cap:
-            msg = deps.llm.invoke("agent", [*messages, HumanMessage(BUDGET_SPENT)], stats=stats)
+        if budget.tool_calls_used >= cap or budget.stuck:
+            # Code decides when the loop ends: no tools bound, so the model must answer (D2.2).
+            stop = STUCK if budget.stuck else BUDGET_SPENT
+            msg = deps.llm.invoke("agent", [*messages, HumanMessage(stop)], stats=stats)
         else:
             msg = deps.llm.invoke("agent", messages, tools=list(tools_for(state["user"]).values()), stats=stats)
         update = {"turn_messages": [*state["turn_messages"], msg], "budget": _charge(budget, stats)}
@@ -178,6 +190,7 @@ def build_graph(deps: Deps, checkpointer=None):
         available = tools_for(state["user"])
         budget = state["budget"]
         used = budget.tool_calls_used
+        last_code, stuck, bq_down = budget.last_error_code, budget.stuck, budget.bq_down
         results = []
         update: dict = {}
         for call in state["turn_messages"][-1].tool_calls:
@@ -186,10 +199,16 @@ def build_graph(deps: Deps, checkpointer=None):
             elif call["name"] not in available:
                 used += 1
                 content = json.dumps({"error": {"message": f"Unknown tool {call['name']}.", "hint": ""}})
+            elif call["name"] == "run_sql" and bq_down:
+                used += 1
+                content = BQ_DOWN  # refused in code: no new queries once BigQuery is down (D2.13)
             else:
                 used += 1
                 try:
                     content = available[call["name"]].invoke(call["args"])
+                except GatewayUnavailableError:
+                    bq_down = True
+                    content = BQ_DOWN
                 except SafetyStop as stop:
                     # A stop code ends the turn: neutral decline plus a security event (D2.1).
                     code = stop.rejection.code
@@ -198,11 +217,17 @@ def build_graph(deps: Deps, checkpointer=None):
                     results.append(ToolMessage(content=json.dumps({"error": {"code": code}}),
                                                tool_call_id=call["id"], name=call["name"]))
                     break
+            if call["name"] == "run_sql" and content != BQ_DOWN:
+                # Stuck rule (D2.2): the same error code twice in a row on run_sql.
+                code = json.loads(content).get("error", {}).get("code")
+                stuck = stuck or (code is not None and code == last_code)
+                last_code = code
             results.append(ToolMessage(content=content, tool_call_id=call["id"], name=call["name"]))
         return {
             **update,
             "turn_messages": [*state["turn_messages"], *results],
-            "budget": budget.model_copy(update={"tool_calls_used": used}),
+            "budget": budget.model_copy(update={"tool_calls_used": used, "last_error_code": last_code,
+                                                "stuck": stuck, "bq_down": bq_down}),
         }
 
     def route_after_tools(state: AgentState) -> str:

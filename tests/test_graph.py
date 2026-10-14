@@ -11,7 +11,7 @@ from analyst.safety.classifier import ClassifierOutput
 from analyst.safety.declines import DECLINES
 from analyst.safety.output_check import GROUNDING_NOTE
 from analyst.sql.brands import BrandMatcher
-from analyst.sql.gateway import SafetyStop
+from analyst.sql.gateway import GatewayUnavailableError, SafetyStop
 from analyst.sql.validator import Rejection, describe, validate
 from analyst.state import Intent
 from analyst.store.results import ResultStore
@@ -59,9 +59,12 @@ class FakeGateway:
     def __init__(self, store):
         self.store = store
         self.sqls = []
+        self.down = False
 
     def run(self, sql, user):
         self.sqls.append(sql)
+        if self.down:
+            raise GatewayUnavailableError("BigQuery is unavailable")
         checked = validate(sql)
         if isinstance(checked, Rejection):
             if checked.stop:
@@ -338,3 +341,93 @@ def test_records_hold_metric_filters_and_grouping(setup):
     record = make(llm)("revenue by month")["records"][0]
     assert (record.metric, record.grouping) == ("revenue", "month")
     assert record.filters == "status = 'Complete'"
+
+
+# Phase 3: repairs, stuck rule, BigQuery down (D2.2, D2.13)
+
+BAD_TABLE = "SELECT * FROM users"  # UNKNOWN_TABLE
+BAD_PARSE = "SELEC 1"  # PARSE_ERROR
+
+
+def test_repair_succeeds_on_the_second_call(setup):
+    make, gateway, _ = setup
+    llm = FakeLLM(["analysis"], [sql_call(1, BAD_TABLE), sql_call(2), AIMessage("Revenue was 100.")])
+    state = make(llm)("revenue")
+    assert state["budget"].tool_calls_used == 2 and not state["budget"].stuck
+    assert state["records"][0].result_id == "r1" and state["budget"].last_error_code is None
+
+
+def test_stuck_rule_fires_on_the_same_code_twice(setup):
+    make, _, _ = setup
+    llm = FakeLLM(["analysis"], [sql_call(1, BAD_TABLE), sql_call(2, BAD_TABLE), AIMessage("I couldn't get that.")])
+    state = make(llm)("revenue from the users table")
+    assert state["budget"].stuck and state["budget"].tool_calls_used == 2
+    assert llm.calls[-1] == ("invoke", "agent", False)  # forced to answer, no tools
+    assert "twice in a row" in llm.agent_messages[-1][-1].content
+
+
+def test_cap_stops_an_oscillating_loop_without_the_stuck_rule(setup):
+    make, _, _ = setup
+    flip = [sql_call(i, BAD_TABLE if i % 2 else BAD_PARSE) for i in range(6)]
+    llm = FakeLLM(["analysis"], [*flip, AIMessage("Couldn't do it.")])
+    state = make(llm)("revenue")
+    assert state["budget"].tool_calls_used == 6 and not state["budget"].stuck
+    assert llm.calls[-1] == ("invoke", "agent", False)
+
+
+def test_stop_codes_never_repair(setup):
+    make, _, _ = setup
+    llm = FakeLLM(["analysis"], [sql_call(1, "DELETE FROM sales WHERE TRUE")])
+    state = make(llm)("clean up")
+    assert state["decline"] == "NOT_SELECT" and len(llm.agent_messages) == 1
+
+
+def test_bigquery_down_mid_turn_answers_with_what_it_has(setup):
+    make, gateway, _ = setup
+    compute = AIMessage("", tool_calls=[{"name": "compute", "id": "k1",
+                                         "args": {"operation": "total", "result_id": "r1", "column": "revenue"}}])
+    llm = FakeLLM(["analysis"], [sql_call(1), sql_call(2), sql_call(3), compute,
+                                 AIMessage("Revenue was 100 and 120, total 220. I couldn't fetch the breakdown.")])
+    turn = make(llm)
+
+    original = gateway.run
+
+    def second_call_fails(sql, user):
+        if len(gateway.sqls) >= 1:
+            gateway.down = True
+        return original(sql, user)
+
+    gateway.run = second_call_fails
+    state = turn("revenue and why")
+    assert state["budget"].bq_down
+    assert len(gateway.sqls) == 2  # the third run_sql was refused in code
+    assert "BQ_DOWN" in llm.agent_messages[3][-1].content  # refused call
+    assert state["draft"].text.startswith("Revenue was 100") and state["removed_numbers"] == []
+    assert [r.result_id for r in state["records"]] == ["r1", "r2"]  # compute still worked
+
+
+def test_try_again_next_turn_queries_normally(setup):
+    make, gateway, _ = setup
+    gateway.down = True
+    llm = FakeLLM(["analysis", "analysis"], [sql_call(1), AIMessage("BigQuery is unavailable right now."),
+                                             sql_call(2), AIMessage("Revenue was 100.")])
+    turn = make(llm)
+    assert turn("revenue")["budget"].bq_down
+    gateway.down = False
+    state = turn("try again")
+    assert not state["budget"].bq_down and state["records"][0].result_id == "r1"
+    assert "revenue" in [m.text for m in llm.agent_messages[-1] if isinstance(m, HumanMessage)]
+
+
+def test_fallback_use_is_recorded_in_the_budget(setup):
+    make, _, _ = setup
+
+    class FallbackLLM(FakeLLM):
+        def invoke(self, role, messages, tools=None, stats=None):
+            if stats is not None and role == "agent":
+                stats.models_used.append("gemini-3.6-flash")
+                stats.fallback_used = True
+            return super().invoke(role, messages, tools, stats)
+
+    state = make(FallbackLLM(["analysis"], [AIMessage("Hi.")]))("revenue")
+    assert state["budget"].fallback_used and state["budget"].models_used == ["gemini-3.6-flash"]
