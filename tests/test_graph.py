@@ -188,7 +188,7 @@ def agent_was_called(llm):
     return any(c[:2] == ("invoke", "agent") for c in llm.calls)
 
 
-@pytest.mark.parametrize("intent", ["off_topic", "pii_individuals", "injection", "destructive", "report_action"])
+@pytest.mark.parametrize("intent", ["off_topic", "pii_individuals", "injection", "destructive"])
 def test_decline_intents_never_reach_the_agent(setup, intent):
     make, gateway, _ = setup
     llm = FakeLLM([intent])

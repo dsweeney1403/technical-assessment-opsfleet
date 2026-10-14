@@ -8,9 +8,9 @@
 !.env.example
 
 # Runtime output
-traces/
-charts/
-reports/
+/traces/
+/charts/
+/reports/
 *.db
 *.sqlite
 *.sqlite3

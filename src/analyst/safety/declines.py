@@ -27,7 +27,6 @@ DECLINES = {
         "That would need personal details such as names, emails or addresses, which I don't have access to. "
         "I can answer it with customer segments instead, for example by age band, gender or location."
     ),
-    "report_action": "Reports aren't available in this build yet. I can answer the question directly instead.",
     "LEAK_BLOCKED": (
         "I can't show that answer because it may include details I'm not allowed to share. "
         "Try asking about groups, for example by age band, state or category."

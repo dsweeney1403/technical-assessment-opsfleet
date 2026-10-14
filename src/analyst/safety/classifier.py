@@ -27,6 +27,7 @@ class ClassifierOutput(BaseModel):
     confident: bool = Field(True, description="False when the intent is a close call.")
     brands_mentioned: list[str] = Field(default_factory=list, description="Brand names only, as the user wrote them.")
     is_followup: bool = False
+    report_op: Literal["create", "redo", "save", "library", "download", "delete", "none"] = "none"
     reason: str = Field(description="One short sentence.")
 
 
@@ -51,5 +52,6 @@ def classify(llm: LLM, history: list[BaseMessage], user_input: str, stats: CallS
         confident=out.confident,
         brands_mentioned=out.brands_mentioned,
         is_followup=out.is_followup,
+        report_op=out.report_op if out.intent == "report_action" else "none",
         reason=out.reason,
     )
