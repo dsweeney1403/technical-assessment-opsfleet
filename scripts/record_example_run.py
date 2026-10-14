@@ -152,7 +152,7 @@ def main() -> None:
             cli.console.print(f"$ python -m analyst chat --user ceo {flag}", markup=False)
             s = session("ceo", f"fault{flag}", faults=faults)
             say(s, question)
-            if flag == "--simulate-embedding-down":
+            if flag in ("--simulate-llm-429", "--simulate-embedding-down"):
                 show_trace(s)
 
     with section("A learned preference", "Asking for tables three times makes tables the default, marked as "

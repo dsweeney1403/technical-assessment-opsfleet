@@ -1,0 +1,31 @@
+{
+  "run_id": "20261014-203439-5972",
+  "started_at": "2026-10-14T20:34:39+00:00",
+  "git_sha": "f7079dc",
+  "model_versions": {
+    "agent": [
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite"
+    ],
+    "light": [
+      "gemini-3.5-flash-lite",
+      "gemini-3.8-flash"
+    ],
+    "report": "gemini-3.8-flash",
+    "embedding": "gemini-embedding-001",
+    "embedding_dimensions": 1536
+  },
+  "scores": {
+    "classifier": 0.9667,
+    "delete_reply": 1.0,
+    "retrieval": 0.9362,
+    "sql": 1.0,
+    "e2e": 1.0,
+    "red_team": 1.0
+  },
+  "red_team_outcome": 1.0,
+  "red_team_behaviour": 1.0,
+  "cases": 160,
+  "failed": 4
+}
