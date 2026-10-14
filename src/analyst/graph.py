@@ -29,6 +29,7 @@ from analyst.safety import output_check as oc
 from analyst.safety.classifier import classify
 from analyst.safety.declines import DECLINES, SECURITY_REASONS, no_access, scope_note
 from analyst.sql.brands import BrandMatcher
+from analyst.sql.diagnosis import KnownValues
 from analyst.sql.gateway import Gateway, SafetyStop
 from analyst.state import AgentState, Budget, Draft, Intent, SecurityEvent
 from analyst.store.results import ResultStore
@@ -65,6 +66,7 @@ class Deps:
     store: ResultStore
     today: Callable[[], date] = field(default=date.today)
     brands: BrandMatcher = field(default_factory=lambda: BrandMatcher([]))
+    known: KnownValues | None = None  # loaded once per session (D2.5)
 
 
 def _charge(budget: Budget, stats: CallStats) -> Budget:
@@ -143,7 +145,7 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def light_reply(state: AgentState) -> dict:
         stats = CallStats()
-        system = prompts.light_system(state["user"], deps.today(), state["summary"])
+        system = prompts.light_system(state["user"], deps.today(), state["summary"], deps.known)
         msg = deps.llm.invoke(
             "light", [SystemMessage(system), *state["messages"], HumanMessage(state["user_input"])], stats=stats
         )
@@ -154,7 +156,7 @@ def build_graph(deps: Deps, checkpointer=None):
         classified = state["classified"]
         system = prompts.agent_system(
             state["user"], deps.today(), memory.records_block(state["records"]), state["summary"],
-            classified.out_of_scope_brands if classified else [],
+            classified.out_of_scope_brands if classified else [], deps.known,
         )
         messages = [SystemMessage(system), *state["messages"], HumanMessage(state["user_input"]),
                     *state["turn_messages"]]

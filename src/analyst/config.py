@@ -54,6 +54,11 @@ class CircuitBreakerSettings(_Strict):
     cooldown_s: float = Field(gt=0)
 
 
+class EmptyResults(_Strict):
+    diagnosis: bool = True
+    structural_check: bool = True
+
+
 class BigQuerySettings(_Strict):
     dataset: str
     max_bytes_processed: int = Field(gt=0)  # dry-run gate, lowerable for the demo (D2.3)
@@ -80,6 +85,7 @@ class Settings(BaseModel):
     llm_retry: LLMRetry
     circuit_breaker: CircuitBreakerSettings
     bigquery: BigQuerySettings
+    empty_results: EmptyResults
     memory: Memory
     charts: Charts
 

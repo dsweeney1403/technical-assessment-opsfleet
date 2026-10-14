@@ -44,7 +44,8 @@ def build_session(user_id: str) -> Session:
     from analyst.graph import Deps, build_graph
     from analyst.llm.client import LLM
     from analyst.sql.brands import BrandMatcher
-    from analyst.sql.gateway import Gateway, load_brands, load_curated
+    from analyst.sql.diagnosis import load_known_values
+    from analyst.sql.gateway import BQ_ERRORS, Gateway, load_brands, load_curated
     from analyst.store.results import ResultStore
 
     settings = load_settings()
@@ -52,9 +53,14 @@ def build_session(user_id: str) -> Session:
     env = load_env()
     store = ResultStore()
     client = bigquery.Client(project=env.google_cloud_project)
+    curated = load_curated(settings.bigquery.dataset)
     brands = BrandMatcher(load_brands(client, settings.bigquery.dataset))
-    gateway = Gateway(settings.bigquery, client, store, load_curated(settings.bigquery.dataset), brands)
-    graph = build_graph(Deps(settings, LLM(settings, env.gemini_api_key), gateway, store, brands=brands))
+    try:
+        known = load_known_values(client, curated)  # once per session (D2.5)
+    except BQ_ERRORS:
+        known = None  # prompts fall back to fixed lists; queries still report their own errors
+    gateway = Gateway(settings.bigquery, client, store, curated, brands, known=known, empty=settings.empty_results)
+    graph = build_graph(Deps(settings, LLM(settings, env.gemini_api_key), gateway, store, brands=brands, known=known))
     return Session(user, graph, uuid.uuid4().hex)
 
 

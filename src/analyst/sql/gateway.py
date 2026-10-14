@@ -29,7 +29,8 @@ from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from google.cloud import bigquery
 
-from analyst.config import BigQuerySettings, User
+from analyst.config import BigQuerySettings, EmptyResults, User
+from analyst.sql import diagnosis
 from analyst.sql.brands import BrandMatcher
 from analyst.sql.scope import scoped_tables
 from analyst.sql.validator import Rejection, Validated, describe, validate
@@ -175,6 +176,8 @@ class Gateway:
     curated: dict[str, str]
     brands: BrandMatcher
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
+    known: diagnosis.KnownValues | None = None  # loaded once per session (D2.5)
+    empty: EmptyResults = field(default_factory=EmptyResults)
     transient_retries: int = 0  # cumulative for the session, for the trace (phase 4)
 
     def _retrying(self, fn: Callable):
@@ -239,4 +242,26 @@ class Gateway:
             raise GatewayFatalError(f"BigQuery refused the request: {_bq_message(exc)}. {DOCTOR_HINT}") from exc
         data_ts = datetime.now(UTC).isoformat(timespec="seconds")
         stored = self.store.put(df, sql, rewritten, data_ts, meta=describe(checked.tree))
-        return compact(stored, df, self.settings.preview_rows_to_model)
+        result = compact(stored, df, self.settings.preview_rows_to_model)
+        if df.empty:
+            found = self._diagnose(checked, tables, params)
+            if found:
+                result["diagnosis"] = found
+        return result
+
+    def _diagnose(self, checked: Validated, tables: dict[str, str], params: list) -> dict | None:
+        """Why is it empty? Filter values first, then one count without filters (D2.5)."""
+        if self.empty.diagnosis and self.known is not None:
+            problems = diagnosis.diagnose(checked.tree, self.known)
+            if problems:
+                return {"filter_problems": problems, "hint": diagnosis.FILTER_HINT}
+        if not self.empty.structural_check:
+            return None
+        count_sql = wrap_sql(diagnosis.without_filters(checked.tree), tables)
+        try:
+            n = int(self._retrying(lambda: self._execute(count_sql, params)).iloc[0, 0])
+        except (_Timeout, GatewayUnavailableError, *BQ_ERRORS):
+            return None  # best effort: the empty result still goes back as it is
+        if n == 0:
+            return {"structural": "empty_without_filters", "hint": diagnosis.JOIN_HINT}
+        return {"structural": "genuine_empty", "hint": diagnosis.GENUINE_HINT}

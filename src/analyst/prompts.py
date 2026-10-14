@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from analyst.config import User
+from analyst.sql.diagnosis import SHORT_COLUMNS, KnownValues
 
 SAFETY = """Safety rules (always apply):
 - Analyse groups, never individual people. Never list customers one by one and never show customer_id values. Use customer_id only to join tables and count distinct customers.
@@ -19,10 +20,10 @@ SCHEMA = """Tables (BigQuery Standard SQL). Write FROM sales, FROM customers or 
 
 sales: one row per order item.
   order_id INT64, customer_id INT64 (join and distinct counts only), product_id INT64,
-  status STRING (Shipped, Complete, Processing, Cancelled, Returned), sale_price FLOAT64, cost FLOAT64,
-  product_name STRING, brand STRING, category STRING, department STRING (Men, Women),
+  status STRING, sale_price FLOAT64, cost FLOAT64,
+  product_name STRING, brand STRING, category STRING, department STRING,
   order_created_at TIMESTAMP, order_shipped_at TIMESTAMP, order_delivered_at TIMESTAMP, order_returned_at TIMESTAMP,
-  age_band STRING (under 18, 18-24, 25-34, 35-44, 45-54, 55-64, 65+), gender STRING (M, F),
+  age_band STRING, gender STRING,
   country STRING, state STRING, city STRING, traffic_source STRING, signup_month DATE
 
 customers: one row per registered customer, including those who never ordered.
@@ -32,6 +33,28 @@ customers: one row per registered customer, including those who never ordered.
 products: one row per product, including products never sold.
   product_id INT64, product_name STRING, brand STRING, category STRING, department STRING,
   cost FLOAT64, retail_price FLOAT64"""
+
+# Used until the session's known values are loaded (tests, or if loading fails).
+DEFAULT_VALUES = {
+    "status": ["Cancelled", "Complete", "Processing", "Returned", "Shipped"],
+    "department": ["Men", "Women"],
+    "gender": ["F", "M"],
+    "age_band": ["under 18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"],
+}
+
+
+def schema(user: User, known: KnownValues | None = None) -> str:
+    """Schema plus every value of the short columns, so filters are spelled right first time (D2.5)."""
+    values = {c: known.values[c] for c in SHORT_COLUMNS if known.values.get(c)} if known else DEFAULT_VALUES
+    lines = [SCHEMA, "", "Exact values (string filters are case-sensitive):"]
+    lines += [f"  {col}: {', '.join(vals)}" for col, vals in values.items()]
+    if not user.all_brands:
+        lines.append(f"  brand: {', '.join(user.brands)}")
+    lines.append("  state and city: too many to list; diagnosis suggests the right spelling if a filter matches nothing.")
+    if known:
+        lines.append(f"Order dates run from {known.min_date.isoformat()} to {known.max_date.isoformat()}.")
+    return "\n".join(lines)
+
 
 METRIC_RULES = """Metric rules:
 - Revenue is SUM(sale_price) over items whose status is not Cancelled or Returned.
@@ -55,20 +78,22 @@ def _out_of_scope_block(brands: list[str]) -> str:
             f"Never say {names} had no sales or no data.\n")
 
 
-def agent_system(user: User, today: date, records: str, summary: str, out_of_scope: list[str] = ()) -> str:
+def agent_system(user: User, today: date, records: str, summary: str, out_of_scope: list[str] = (),
+                 known: KnownValues | None = None) -> str:
     return f"""You are a data analyst for a retail company's executives. You answer business questions by querying data with the run_sql tool.
 
 {SAFETY}
 
 Today is {today.isoformat()}. The user is {user.name} ({user.role}). {_scope_line(user)}
 {_out_of_scope_block(list(out_of_scope))}
-{SCHEMA}
+{schema(user, known)}
 
 {METRIC_RULES}
 
 How to work:
 - Aggregate in SQL. Call tools as often as the question needs, up to 6 tool calls per turn including fixes.
 - If a tool returns an error, read the hint, fix the call and try again.
+- If run_sql returns an empty result with a diagnosis, follow its hint: fix a misspelled value using the closest match, or report a genuine empty with the filters and date range used.
 - If run_sql returns NO_ACCESS_BRAND, use a suggested spelling for a typo. Drop any brand that is not in the user's access, rerun, and tell the user it is outside their access.
 - Questions about top or best customers are answered as a segment: how many customers, their share of revenue, and their age bands, gender and locations. Never list individual customers.
 - Make a chart only when the user asks for one. To chart data that is already stored, call make_chart with its result_id. Do not run the query again.
@@ -91,7 +116,7 @@ Summary of earlier conversation:
 {summary or '(none)'}"""
 
 
-def light_system(user: User, today: date, summary: str) -> str:
+def light_system(user: User, today: date, summary: str, known: KnownValues | None = None) -> str:
     return f"""You are a data analyst assistant for a retail company's executives. This turn needs no data query.
 Reply briefly and naturally. If the user asks what data is available, describe it from the schema below in plain words.
 If the user asks for figures, say you can look them up if they ask the question.
@@ -100,7 +125,7 @@ If the user asks for figures, say you can look them up if they ask the question.
 
 Today is {today.isoformat()}. The user is {user.name}. {_scope_line(user)}
 
-{SCHEMA}
+{schema(user, known)}
 
 Summary of earlier conversation:
 {summary or '(none)'}"""
