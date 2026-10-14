@@ -68,23 +68,39 @@ def test_without_filters_strips_every_where_and_having():
     sql = ("WITH t AS (SELECT state, SUM(sale_price) AS r FROM sales WHERE status = 'Complete' GROUP BY 1 HAVING r > 5) "
            "SELECT * FROM t JOIN customers c USING (state) WHERE r > 10")
     out = without_filters(validate(sql).tree)
-    assert out.startswith("SELECT COUNT(*) AS n FROM (")
+    assert out.startswith("SELECT * FROM (") and out.endswith(") LIMIT 1")
     assert "WHERE" not in out and "HAVING" not in out and "JOIN" in out
+
+
+@pytest.mark.parametrize("df, nothing", [
+    (pd.DataFrame({"revenue": pd.Series([], dtype=float)}), True),
+    (pd.DataFrame({"revenue": [None]}), True),  # SUM over no rows
+    (pd.DataFrame({"n": [0]}), True),  # COUNT over no rows
+    (pd.DataFrame({"n": [0], "revenue": [float("nan")]}), True),
+    (pd.DataFrame({"revenue": [12.5]}), False),
+    (pd.DataFrame({"state": ["Texas"], "n": [0]}), False),  # a grouped row is a real answer
+    (pd.DataFrame({"n": [0, 0]}), False),
+])
+def test_no_rows_matched(df, nothing):
+    assert diagnosis.no_rows_matched(df) == nothing
 
 
 # Through the gateway
 
+UNFILTERED = ") LIMIT 1"
+
+
 class CountingClient(FakeClient):
-    """Main query returns no rows; the structural count returns `count`."""
+    """Main query: SUM over no rows (one NULL row). The unfiltered rerun returns `count` revenue."""
 
     def __init__(self, count):
-        super().__init__(df=pd.DataFrame({"revenue": pd.Series([], dtype=float)}))
+        super().__init__(df=pd.DataFrame({"revenue": [None]}))
         self.count = count
 
     def query(self, sql, job_config=None):
-        if not job_config.dry_run and "COUNT(*) AS n" in sql:
+        if not job_config.dry_run and sql.endswith(UNFILTERED):
             self.queries.append((sql, job_config))
-            self.last_job = FakeJob(df=pd.DataFrame({"n": [self.count]}))
+            self.last_job = FakeJob(df=pd.DataFrame({"revenue": [float(self.count) or None]}))
             return self.last_job
         return super().query(sql, job_config)
 
@@ -97,9 +113,9 @@ def gateway(client, known=KNOWN):
 def test_empty_result_with_bad_value_returns_diagnosis_and_skips_the_count():
     client = CountingClient(count=5)
     out = gateway(client).run("SELECT SUM(sale_price) AS revenue FROM sales WHERE country = 'Brazil'", CEO)
-    assert out["empty"] and out["diagnosis"]["filter_problems"][0]["closest"] == ["Brasil"]
+    assert out["diagnosis"]["filter_problems"][0]["closest"] == ["Brasil"]
     assert out["diagnosis"]["hint"] == diagnosis.FILTER_HINT
-    assert not any("COUNT(*) AS n" in q for q, _ in client.queries)
+    assert not any(q.endswith(UNFILTERED) for q, _ in client.queries)
 
 
 def test_empty_even_without_filters_points_to_joins():
@@ -111,7 +127,7 @@ def test_rows_without_filters_means_a_genuine_empty():
     client = CountingClient(count=12)
     out = gateway(client).run("SELECT SUM(sale_price) AS revenue FROM sales WHERE country = 'China'", CEO)
     assert out["diagnosis"]["structural"] == "genuine_empty"
-    count_sql = next(q for q, _ in client.queries if "COUNT(*) AS n" in q)
+    count_sql = next(q for q, _ in client.queries if q.endswith(UNFILTERED))
     assert count_sql.startswith("WITH sales AS (")  # runs through the same scope rewrite
 
 

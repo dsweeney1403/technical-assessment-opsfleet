@@ -243,7 +243,7 @@ class Gateway:
         data_ts = datetime.now(UTC).isoformat(timespec="seconds")
         stored = self.store.put(df, sql, rewritten, data_ts, meta=describe(checked.tree))
         result = compact(stored, df, self.settings.preview_rows_to_model)
-        if df.empty:
+        if diagnosis.no_rows_matched(df):
             found = self._diagnose(checked, tables, params)
             if found:
                 result["diagnosis"] = found
@@ -257,11 +257,11 @@ class Gateway:
                 return {"filter_problems": problems, "hint": diagnosis.FILTER_HINT}
         if not self.empty.structural_check:
             return None
-        count_sql = wrap_sql(diagnosis.without_filters(checked.tree), tables)
+        unfiltered = wrap_sql(diagnosis.without_filters(checked.tree), tables)
         try:
-            n = int(self._retrying(lambda: self._execute(count_sql, params)).iloc[0, 0])
+            still_nothing = diagnosis.no_rows_matched(self._retrying(lambda: self._execute(unfiltered, params)))
         except (_Timeout, GatewayUnavailableError, *BQ_ERRORS):
-            return None  # best effort: the empty result still goes back as it is
-        if n == 0:
+            return None  # best effort: the result still goes back as it is
+        if still_nothing:
             return {"structural": "empty_without_filters", "hint": diagnosis.JOIN_HINT}
         return {"structural": "genuine_empty", "hint": diagnosis.GENUINE_HINT}

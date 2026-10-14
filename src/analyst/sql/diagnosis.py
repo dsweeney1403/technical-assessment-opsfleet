@@ -8,8 +8,11 @@ An empty result isn't trusted as an answer until code has checked it.
 - Diagnosis: on an empty result, each string filter value is checked against
   the known values ("no match for 'Brazil' in country, closest: 'Brasil'"), and
   date filters against the data's date range.
-- Structural check: when diagnosis finds nothing, one count with every filter
-  removed tells a join problem (still empty) from a genuine empty (rows back).
+- Structural check: when diagnosis finds nothing, the query runs once more with
+  every filter removed. Still nothing tells a join problem from a genuine empty.
+
+"Nothing" includes an aggregate with no GROUP BY: SUM over no rows returns one
+row of NULL, and COUNT one row of 0, never an empty result.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import difflib
 from dataclasses import dataclass
 from datetime import date
 
+import pandas as pd
 from sqlglot import exp
 
 SHORT_COLUMNS = ("department", "gender", "status", "traffic_source", "age_band", "country", "category")
@@ -145,13 +149,22 @@ def diagnose(tree: exp.Expression, known: KnownValues) -> list[dict]:
     return _value_problems(tree, known) + _date_problems(tree, known)
 
 
+def no_rows_matched(df: pd.DataFrame) -> bool:
+    """No rows, or one row of only NULLs and zeros (an aggregate over nothing)."""
+    if df.empty:
+        return True
+    if len(df) > 1:
+        return False
+    return all(pd.isna(v) or (isinstance(v, (int, float)) and v == 0) for v in df.iloc[0].tolist())
+
+
 def without_filters(tree: exp.Expression) -> str:
-    """The query with every WHERE, HAVING and QUALIFY removed, wrapped in a row count."""
+    """The query with every WHERE, HAVING and QUALIFY removed; one row is enough to tell."""
     stripped = tree.copy()
     for select in stripped.find_all(exp.Select):
         for arg in ("where", "having", "qualify"):
             select.set(arg, None)
-    return f"SELECT COUNT(*) AS n FROM ({stripped.sql('bigquery')})"
+    return f"SELECT * FROM ({stripped.sql('bigquery')}) LIMIT 1"
 
 
 FILTER_HINT = "No row matches these filter values. Use the closest matches, or tell the user the value doesn't exist."
