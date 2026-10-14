@@ -1,0 +1,92 @@
+models:
+  agent: gemini-3.8-flash
+  agent_fallbacks: [gemini-3.7-flash, gemini-3.5-flash-lite]   # D2.10
+  light: gemini-3.5-flash-lite        # classifier, light path, rolling summary, delete reply classifier
+  light_fallbacks: [gemini-3.8-flash] # D2.11; fail open to the agent after this
+  report: gemini-3.8-flash            # planner and writer; set to gemini-3.1-pro-preview for heavier reports
+  indexing: gemini-3.8-flash          # trio indexing call: brands, description, person names (D4.4, D4.7, D4.11)
+  embedding: gemini-embedding-001
+  embedding_dimensions: 1536          # 2048 or below to fit Firestore (D4.6); changing it means re-indexing
+  # judge: production only, a cross-family model via Model Garden (D5.6); not used in the prototype (D8.1)
+
+budgets:
+  max_tool_calls_per_turn: 6          # repairs included (D2.2); also per report section (D3.1)
+  stuck_same_code_limit: 2            # same error code twice in a row stops that query (D2.2)
+
+llm_retry:                            # D2.8: transient errors only (429, 5xx, timeouts, resets)
+  max_attempts: 3
+  max_total_wait_s: 30
+  honour_retry_after: true
+
+circuit_breaker:                      # D2.12
+  failures: 5
+  cooldown_s: 60
+
+bigquery:
+  dataset: bigquery-public-data.thelook_ecommerce
+  maximum_bytes_billed: 200000000     # 200 MB; whole dataset is ~45 MB. Lower to 1 MB to demo COST_LIMIT (D2.3)
+  job_timeout_s: 30
+  transient_max_attempts: 3           # BQ_TRANSIENT (D2.4)
+  preview_rows_to_model: 50
+
+empty_results:                        # D2.5
+  diagnosis: true
+  structural_check: true
+
+memory:
+  verbatim_turns: 6
+  result_ttl: session
+
+scope:
+  out_of_scope_behaviour: flag        # C2 answered by Roi 2026-10-11: answer on available data, flag the gap (D1.8 row 6)
+  allow_company_benchmarks: false     # C1 answered by Roi 2026-10-11: own brands only
+
+privacy:
+  min_group_size: 10                  # confirmed by the re-identification rerun, 2026-10-14
+  small_groups: roll_up               # D2.7: merge into "Other", hide "Other" if still under min
+
+tracing:                              # D2.16, D2.23
+  exporter: jsonl                     # production: otel (Cloud Trace + BigQuery)
+  dir: traces/
+
+faults:                               # D2.14, set by CLI flags
+  simulate_llm_429: false
+  simulate_llm_down: false
+  simulate_bq_error: false
+  simulate_embedding_down: false      # D4.8
+
+reports:                              # Group 3
+  backend: sqlite                     # sqlite | firestore (D3.10)
+  sqlite_path: reports.db
+  download_dir: reports/              # D3.14, gitignored
+  sections_in_parallel: false         # D3.5
+  max_sections: 6                     # Proposed, not yet decided
+  soft_delete: true                   # D3.23
+  purge_after_days: 30                # D3.23
+
+golden:                               # Group 4
+  trios_dir: data/golden/trios/
+  glossary: config/glossary.json      # D4.2
+  k: 3                                # D4.9
+  threshold: null                     # set from `golden calibrate`, leaning high (D4.9)
+  overfetch: 20                       # brand filter runs in code on the top 20 (D4.6)
+
+profile:                              # Group 4
+  backend: sqlite                     # sqlite | firestore (D4.25); same file as reports
+  inferred_preference_after: 3        # format requests before a presentation preference is set (D4.16)
+  analysis_defaults: config/analysis_defaults.yaml   # D4.15
+
+persona:                              # D4.22, D4.23
+  dir: config/persona/
+  reload_every_turn: true
+  fallback_to_previous: true
+
+feedback:                             # D4.19
+  thumbs_prompt: true
+  thumbs_down_reason: optional         # D8.1
+
+evals:                                # D8.1
+  results_dir: evals/results/
+  red_team_repeats: 3                 # each attack runs several times (D5.2)
+  requests_per_minute: 8              # throttle for free-tier limits; confirm against AI Studio rate-limit page
+  sql_numeric_tolerance: 0.005        # D5.4
