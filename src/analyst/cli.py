@@ -479,6 +479,41 @@ def golden_calibrate(
         raise typer.Exit(1)
 
 
+persona_app = typer.Typer(no_args_is_help=True, help="Persona: smoke-test the active version.")
+app.add_typer(persona_app, name="persona")
+
+
+@persona_app.command("test")
+def persona_test(debug: bool = typer.Option(False, "--debug", help="Show tracebacks for unexpected errors")) -> None:
+    """Run evals/persona_smoke.yaml against the active persona and print pass or fail (D4.23)."""
+    from analyst.config import ROOT
+    from analyst.persona import load_persona
+    from analyst.persona_smoke import load_cases, run
+
+    results = None
+    with friendly_errors(debug):
+        settings = load_settings()
+        persona = load_persona(settings.persona.dir)
+        console.print(persona_line(), markup=False)
+        cases = load_cases(ROOT / "evals" / "persona_smoke.yaml")
+        rpm = int((settings.model_extra or {}).get("evals", {}).get("requests_per_minute", 8))
+        with console.status(f"Running {len(cases)} cases against persona {persona.version}..."):
+            results = run(cases, build_session, rpm)
+    if results is None:
+        raise typer.Exit(1)
+    table = Table(show_header=True, header_style="bold")
+    for col in ("Case", "User", "Outcome", "Result", "Trace"):
+        table.add_column(col)
+    for r in results:
+        verdict = "[green]pass[/green]" if r.passed else "[red]FAIL[/red]: " + "; ".join(r.failures)
+        table.add_row(r.case.id, r.case.user, f"{r.outcome} ({r.reason})", verdict, r.trace_id)
+    console.print(table)
+    failed = sum(not r.passed for r in results)
+    console.print(f"{len(results) - failed} of {len(results)} passed.", markup=False)
+    if failed:
+        raise typer.Exit(1)
+
+
 @app.command("trace")
 def trace_cmd(
     trace_id: str = typer.Argument(..., help="Trace id shown under an answer; a unique prefix is enough"),

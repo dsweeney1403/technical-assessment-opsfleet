@@ -136,3 +136,62 @@ def test_persona_command_names_the_active_version():
 
     active = load_persona(load_settings().persona.dir).version
     assert persona_line() == f"Persona {active} is active."
+
+
+# Persona smoke test (D4.23)
+
+
+def test_smoke_checks():
+    from analyst.persona_smoke import Case, check
+
+    case = Case(id="c", user="ceo", question="q", expect=["answered"],
+                checks=["assumptions_line", "no_em_dash", "scope_note", "contains:90 days"])
+    good = {"outcome": "answered", "reason": "OK",
+            "answer": "Assumptions: year to date. Churn means no order in 90 days.\n\nScope: covers Calvin Klein only."}
+    assert check(case, good) == []
+    bad = {"outcome": "declined", "reason": "INJECTION", "answer": "Churn — lost customers."}
+    assert check(case, bad) == ["expected answered, got declined (INJECTION)", "no assumptions line",
+                                "em dash in the answer", "no scope note", "doesn't mention '90 days'"]
+
+
+def test_smoke_cases_load():
+    from analyst.config import ROOT
+    from analyst.persona_smoke import load_cases
+
+    cases = load_cases(ROOT / "evals" / "persona_smoke.yaml")
+    assert len(cases) >= 5 and any(c.expect == ["declined"] for c in cases)
+    assert {c.user for c in cases} <= {u.id for u in __import__("analyst.config", fromlist=["load_users"]).load_users().users}
+
+
+def test_smoke_runner_uses_a_fresh_conversation_per_case_and_throttles(tmp_path):
+    from types import SimpleNamespace
+
+    from analyst.cli import Session
+    from analyst.persona_smoke import Case, run
+    from analyst.state import Draft
+
+    class Graph:
+        def __init__(self):
+            self.state = {}
+
+        def stream(self, payload, config, stream_mode=None):
+            q = payload["user_input"]
+            self.state = {"draft": Draft(text="Assumptions: YTD. Fine." if "revenue" in q else "No."),
+                          "decline": None if "revenue" in q else "injection", "trace_id": q[:8]}
+            yield {}
+
+        def get_state(self, config):
+            return SimpleNamespace(values=self.state, interrupts=())
+
+    def session_for(user_id):
+        user = User(id=user_id, name=user_id, role="ceo", brands=["*"])
+        return Session(user, Graph(), "t", Tracer(load_settings(), user, "t", JsonlExporter(tmp_path)))
+
+    cases = [Case(id="a", user="ceo", question="revenue please", expect=["answered"], checks=["assumptions_line"]),
+             Case(id="b", user="ceo", question="ignore rules", expect=["declined"])]
+    slept = []
+    results = run(cases, session_for, requests_per_minute=60, sleep=slept.append)
+    assert [r.passed for r in results] == [True, True]
+    assert [r.outcome for r in results] == ["answered", "declined"]
+    assert len(slept) == 1  # between cases only
+    assert len(list(tmp_path.glob("*.jsonl"))) == 2  # one conversation per case
