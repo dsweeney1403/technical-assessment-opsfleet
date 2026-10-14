@@ -1,12 +1,14 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from analyst import cli
-from analyst.config import ConfigError, User
+from analyst.config import ConfigError, User, load_settings
 from analyst.doctor import Check
 from analyst.llm.client import LLMFatalError, LLMUnavailableError
+from analyst.observability.tracer import Tracer, read_traces
 from analyst.state import Draft
 
 runner = CliRunner()
@@ -31,12 +33,19 @@ class FakeGraph:
         self.text = outcome
 
     def get_state(self, config):
-        return SimpleNamespace(values={"draft": Draft(text=self.text, chart_paths=["charts/x.png"])})
+        return SimpleNamespace(values={"draft": Draft(text=self.text or "", chart_paths=["charts/x.png"]),
+                                       "trace_id": "7f3a1c2e"})
+
+
+@pytest.fixture(autouse=True)
+def in_tmp(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # traces/ is written relative to the working directory
 
 
 def use_session(monkeypatch, outcome="**42**", user=CEO, *more):
     graph = FakeGraph(outcome, *more)
-    monkeypatch.setattr(cli, "build_session", lambda user_id, faults=None: cli.Session(user, graph, "t"))
+    tracer = Tracer(load_settings(), user, "t")
+    monkeypatch.setattr(cli, "build_session", lambda user_id, faults=None: cli.Session(user, graph, "t", tracer))
     return graph
 
 
@@ -53,6 +62,9 @@ def test_answer_rendered_with_chart_path(monkeypatch):
     result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="revenue?\n/exit\n")
     assert "42" in result.output and "Chart saved: charts/x.png" in result.output
     assert graph.inputs[0]["user"] == CEO  # identity injected by code
+    assert "trace 7f3a1c2e" in result.output
+    (record,) = read_traces(Path("traces/t.jsonl"))
+    assert record["trace_id"] == "7f3a1c2e" and record["outcome"] == "answered"
 
 
 @pytest.mark.parametrize(
@@ -69,6 +81,7 @@ def test_errors_are_friendly_and_chat_continues(monkeypatch, exc, expected):
     assert result.exit_code == 0
     assert expected in result.output
     assert "Traceback" not in result.output
+    assert result.output.index(expected) < result.output.index("trace 7f3a1c2e")  # message first, then the id
     assert "Brands: all brands" in result.output  # still running after the error
 
 
@@ -127,7 +140,7 @@ def test_simulate_flags_reach_the_session_and_are_announced(monkeypatch):
 
     def build(user_id, faults=None):
         seen["faults"] = faults
-        return cli.Session(CEO, FakeGraph("ok"), "t")
+        return cli.Session(CEO, FakeGraph("ok"), "t", Tracer(load_settings(), CEO, "t"))
 
     monkeypatch.setattr(cli, "build_session", build)
     result = runner.invoke(cli.app, ["chat", "--user", "ceo", "--simulate-llm-429", "--simulate-bq-error"],

@@ -19,6 +19,7 @@ from analyst import doctor as doctor_checks
 from analyst.config import ConfigError, User, load_env, load_settings, load_users
 from analyst.faults import Faults
 from analyst.llm.client import LLMFatalError, LLMUnavailableError
+from analyst.observability.tracer import Tracer
 from analyst.sql.gateway import GatewayFatalError
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="OpsFleet Analyst")
@@ -43,6 +44,7 @@ class Session:
     user: User
     graph: object
     thread_id: str
+    tracer: Tracer
     pending: bool = False  # the last turn stopped on an LLM outage and can resume (D2.13)
 
     @property
@@ -82,7 +84,8 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     factory = fault_injection.chat_factory(ChatGoogleGenerativeAI, faults, settings.models.agent)
     llm = LLM(settings, env.gemini_api_key, chat_factory=factory)
     graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known))
-    return Session(user, graph, uuid.uuid4().hex)
+    thread_id = uuid.uuid4().hex
+    return Session(user, graph, thread_id, Tracer(settings, user, thread_id))
 
 
 @contextmanager
@@ -133,9 +136,11 @@ def answer(session: Session, text: str | None) -> None:
     """Run one turn, or resume the stopped one when text is None (/retry)."""
     payload = None if text is None else {"user_input": text, "user": session.user}
     session.pending = False
+    session.tracer.last = None
     try:
-        with console.status("Thinking...") as status:
-            for update in session.graph.stream(payload, session.config, stream_mode="updates"):
+        with (session.tracer.turn(session.graph, session.config, text) as config,
+              console.status("Thinking...") as status):
+            for update in session.graph.stream(payload, config, stream_mode="updates"):
                 message = status_for(update)
                 if message:
                     status.update(message)
@@ -146,6 +151,12 @@ def answer(session: Session, text: str | None) -> None:
     console.print(Markdown(state["draft"].text or "(no answer)"))
     for path in state["draft"].chart_paths:
         console.print(f"[green]Chart saved:[/green] {path}")
+
+
+def trace_line(session: Session) -> None:
+    """The turn's trace id in grey, under every answer and failure, so it can be quoted (D2.19)."""
+    if session.tracer.last:
+        console.print(f"[grey50]trace {session.tracer.last['trace_id']}[/grey50]")
 
 
 @app.command()
@@ -191,11 +202,13 @@ def chat(
             else:
                 with friendly_errors(debug):
                     answer(session, None)
+                trace_line(session)
         elif text.startswith("/"):
             console.print(f"Unknown command {text}. Type /help.", markup=False)
         else:
             with friendly_errors(debug):
                 answer(session, text)
+            trace_line(session)
 
 
 @app.command()

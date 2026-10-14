@@ -328,7 +328,11 @@ class Tracer:
         try:
             yield {**config, "callbacks": [handler]}
         except Exception as exc:
-            self.last = self.finish(handler, started_ns, started_at, graph.get_state(config).values, exc, user_input)
+            try:
+                self.last = self.finish(handler, started_ns, started_at, graph.get_state(config).values, exc,
+                                        user_input)
+            except Exception:
+                pass  # a tracing problem must never hide the error the user needs to see
             raise
         self.last = self.finish(handler, started_ns, started_at, graph.get_state(config).values, None, user_input)
 
