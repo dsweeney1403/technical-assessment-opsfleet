@@ -17,7 +17,7 @@ from rich.console import Group
 from rich.text import Text
 from rich.tree import Tree
 
-from analyst.observability.tracer import read_traces
+from analyst.observability.tracer import is_feedback, read_traces
 
 
 class TraceNotFound(Exception):
@@ -29,14 +29,19 @@ def find(directory: Path, trace_id: str) -> list[dict]:
     prefix = trace_id.strip().lower()
     if not prefix:
         raise TraceNotFound("Give a trace id, e.g. `python -m analyst trace 7f3a`.")
-    matches = [r for path in sorted(Path(directory).glob("*.jsonl")) for r in read_traces(path)
-               if r["trace_id"].startswith(prefix)]
+    lines = [r for path in sorted(Path(directory).glob("*.jsonl")) for r in read_traces(path)
+             if r["trace_id"].startswith(prefix)]
+    matches = [r for r in lines if not is_feedback(r)]
     ids = sorted({r["trace_id"] for r in matches})
     if not ids:
         raise TraceNotFound(f"No trace {trace_id} in {directory}/.")
     if len(ids) > 1:
         raise TraceNotFound(f"Trace id {trace_id} is ambiguous: {', '.join(ids)}. Give more characters.")
-    return sorted(matches, key=lambda r: r["attempt"])
+    matches = sorted(matches, key=lambda r: r["attempt"])
+    feedback = [r for r in lines if is_feedback(r)]
+    if feedback:
+        matches[-1] = {**matches[-1], "feedback": feedback[-1]}  # shown under the answer it rates
+    return matches
 
 
 def _ms(span: dict) -> int:
@@ -202,6 +207,11 @@ def render(record: dict, full: bool = False) -> Tree:
                              "fallback used" if totals.get("fallback_used") else None, style=style))
     if record.get("error"):
         outcome.add(_block("error", record["error"], "red"))
+    feedback = record.get("feedback")
+    if feedback:
+        outcome.add(_block("feedback", f"thumbs {feedback['thumbs']}" + (f": {feedback['reason']}"
+                                                                          if feedback.get("reason") else ""),
+                           "red" if feedback["thumbs"] == "down" else ""))
     for event in record.get("security_events", []):
         outcome.add(_block(f"security event {event['code']}", f"{event['source']}: {event.get('detail', '')}", "red"))
     if full and record.get("answer"):

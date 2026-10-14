@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 
 from rich.table import Table
 
+from analyst.observability.tracer import is_feedback
+
 OUTCOMES = ["answered", "partial", "declined", "failed"]
 BQ_ERROR_CODES = {"BQ_DOWN", "BQ_FATAL"}
 DIAGNOSED = {"empty_without_filters"}
@@ -68,12 +70,17 @@ class Stats:
     security_events: Counter = field(default_factory=Counter)
     numbers_removed: int = 0
     turns_with_removals: int = 0
+    thumbs: Counter = field(default_factory=Counter)  # up, down, skip (D4.19)
 
 
 def compute(records: list[dict]) -> Stats:
     st = Stats()
     latest: dict[str, dict] = {}
+    feedback = {r["trace_id"]: r["thumbs"] for r in records if is_feedback(r)}  # the last one per answer counts
+    st.thumbs.update(feedback.values())
     for r in records:
+        if is_feedback(r):
+            continue
         st.tokens += r["totals"].get("tokens", 0)
         st.bytes += r["totals"].get("bytes", 0)
         st.llm_retries += r["totals"].get("llm_retries", 0)
@@ -156,5 +163,6 @@ def render(st: Stats) -> list[Table]:
         ("Security events", events),
         ("Leak-scan blocks", str(st.security_events["LEAK_BLOCKED"])),
         ("Figures removed by grounding", f"{st.numbers_removed} in {st.turns_with_removals} turns"),
+        ("Thumbs up / down / skipped", f"{st.thumbs['up']} / {st.thumbs['down']} / {st.thumbs['skip']}"),
     ])
     return [business, engineering]

@@ -332,9 +332,14 @@ class JsonlExporter:
 
 
 def read_traces(path: Path) -> list[dict]:
+    """Every line of a conversation's file: turn records, plus feedback lines (`"type": "feedback"`)."""
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def is_feedback(record: dict) -> bool:
+    return record.get("type") == "feedback"
 
 
 class Tracer:
@@ -370,6 +375,14 @@ class Tracer:
     @property
     def path(self) -> Path:
         return self.exporter.path(self.conversation_id)
+
+    def add_feedback(self, trace_id: str, thumbs: str, reason: str | None = None) -> dict:
+        """Thumbs up, down or skip on an answer, stored next to its trace (D4.19, D8.1)."""
+        record = {"type": "feedback", "trace_id": trace_id, "conversation_id": self.conversation_id,
+                  "user": {"id": self.user.id, "role": self.user.role},
+                  "at": datetime.now(UTC).isoformat(timespec="seconds"), "thumbs": thumbs, "reason": reason}
+        self.exporter.write(record)
+        return record
 
     def start(self) -> tuple[TraceHandler, int, str]:
         return TraceHandler(), now_ns(), datetime.now(UTC).isoformat(timespec="seconds")

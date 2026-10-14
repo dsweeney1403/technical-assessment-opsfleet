@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import traceback
 import uuid
 from collections.abc import Iterator
@@ -269,6 +270,37 @@ def persona_line() -> str:
     return f"Persona {p.fallback_from} can't be loaded ({p.error}), so the chat is {using}."
 
 
+THUMBS = {"u": "up", "d": "down"}
+
+
+def interactive() -> bool:
+    return sys.stdin.isatty()
+
+
+def ask_thumbs(session: Session, getchar=None) -> None:
+    """One key under each answer: u, d or Enter to skip. A thumbs down asks for an optional reason (D4.19, D8.1).
+    Only in a terminal, so piped and scripted runs are never blocked."""
+    feedback = load_settings().feedback
+    last = session.tracer.last
+    if (not feedback.thumbs_prompt or not interactive() or last is None or session.awaiting
+            or last["outcome"] == "failed"):
+        return
+    console.print("[grey50]Helpful? u = yes, d = no, Enter = skip[/grey50] ", end="")
+    try:
+        key = (getchar or typer.getchar)()
+    except (EOFError, KeyboardInterrupt):
+        key = ""
+    thumbs = THUMBS.get(key.lower(), "skip")
+    console.print(f"[grey50]{thumbs}[/grey50]")
+    reason = None
+    if thumbs == "down" and feedback.thumbs_down_reason == "optional":
+        try:
+            reason = console.input("[grey50]What was wrong? (optional, Enter to skip)[/grey50] ").strip() or None
+        except (EOFError, KeyboardInterrupt):
+            reason = None
+    session.tracer.add_feedback(last["trace_id"], thumbs, reason)
+
+
 def trace_line(session: Session) -> None:
     """The turn's trace id in grey, under every answer and failure, so it can be quoted (D2.19)."""
     if session.tracer.last:
@@ -345,12 +377,14 @@ def chat(
                 with friendly_errors(debug):
                     answer(session, None)
                 trace_line(session)
+                ask_thumbs(session)
         elif text.startswith("/"):
             console.print(f"Unknown command {text}. Type /help.", markup=False)
         else:
             with friendly_errors(debug):
                 answer(session, text)
             trace_line(session)
+            ask_thumbs(session)
 
 
 golden_app = typer.Typer(no_args_is_help=True, help="Golden Bucket: index the seeded trios, calibrate the threshold.")
