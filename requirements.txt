@@ -9,6 +9,7 @@ google-genai==2.30.1
 
 # Data
 google-cloud-bigquery==3.46.1
+sqlglot==30.22.0
 db-dtypes==1.7.2
 pyarrow==26.0.0
 numpy==2.5.3
