@@ -24,7 +24,8 @@ class ClassifierOutput(BaseModel):
         "analysis", "data_question", "conversation", "report_action",
         "off_topic", "pii_individuals", "injection", "destructive",
     ]
-    brands_mentioned: list[str] = Field(default_factory=list)
+    confident: bool = Field(True, description="False when the intent is a close call.")
+    brands_mentioned: list[str] = Field(default_factory=list, description="Brand names only, as the user wrote them.")
     is_followup: bool = False
     reason: str = Field(description="One short sentence.")
 
@@ -47,6 +48,7 @@ def classify(llm: LLM, history: list[BaseMessage], user_input: str, stats: CallS
         return Classified(intent=Intent.unavailable, reason=f"classifier failed: {type(exc).__name__}")
     return Classified(
         intent=Intent(out.intent),
+        confident=out.confident,
         brands_mentioned=out.brands_mentioned,
         is_followup=out.is_followup,
         reason=out.reason,

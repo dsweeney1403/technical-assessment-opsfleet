@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
@@ -27,8 +27,9 @@ class Intent(StrEnum):
 
 class Classified(BaseModel):
     intent: Intent
+    confident: bool = True  # an unsure decline intent goes to the agent (D1.8)
     brands_mentioned: list[str] = []
-    out_of_scope_brands: list[str] = []  # filled by code against entitlements (phase 2)
+    out_of_scope_brands: list[str] = []  # filled by code against entitlements (D1.8 row 6)
     is_followup: bool = False
     reason: str = ""
 
@@ -59,7 +60,16 @@ class Budget(BaseModel):
 
 class Draft(BaseModel):
     text: str = ""
+    source: Literal["agent", "light", "code"] = "agent"  # code-written text skips number grounding
     chart_paths: list[str] = Field(default_factory=list)
+
+
+class SecurityEvent(BaseModel):
+    """Written to the trace in phase 4 (D2.1, D1.8, D1.16)."""
+
+    code: str  # injection, destructive, NOT_SELECT, PII_IDENTIFIER, LEAK_BLOCKED
+    source: Literal["classifier", "gateway", "output_check"]
+    detail: str = ""
 
 
 class AgentState(TypedDict, total=False):
@@ -73,3 +83,7 @@ class AgentState(TypedDict, total=False):
     budget: Budget
     draft: Draft
     trace_id: str
+    decline: str | None  # why the turn was declined: an intent, a stop code or no_access
+    security_events: list[SecurityEvent]
+    grounding_retried: bool  # one grounding retry per turn (D1.16)
+    removed_numbers: list[str]  # ungrounded figures removed from the answer (D1.16)

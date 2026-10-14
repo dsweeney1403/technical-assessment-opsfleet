@@ -54,7 +54,7 @@ def build_session(user_id: str) -> Session:
     client = bigquery.Client(project=env.google_cloud_project)
     brands = BrandMatcher(load_brands(client, settings.bigquery.dataset))
     gateway = Gateway(settings.bigquery, client, store, load_curated(settings.bigquery.dataset), brands)
-    graph = build_graph(Deps(settings, LLM(settings, env.gemini_api_key), gateway, store))
+    graph = build_graph(Deps(settings, LLM(settings, env.gemini_api_key), gateway, store, brands=brands))
     return Session(user, graph, uuid.uuid4().hex)
 
 

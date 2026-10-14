@@ -20,12 +20,17 @@ Record the narrative only: what the user asked about, which brands, periods and 
 Do not include any figures, amounts or percentages. Exact numbers are kept elsewhere."""
 
 
-def new_record(question: str, compact_result: dict, sql: str) -> Record:
+def new_record(question: str, compact_result: dict, sql: str, meta: dict | None = None) -> Record:
+    """`meta` holds metric, filters and grouping, read from the parsed SQL by the gateway (D1.13)."""
+    meta = meta or {}
     return Record(
         record_id=f"rec_{uuid.uuid4().hex[:8]}",
         question=question,
         sql=sql,
         result_id=compact_result["result_id"],
+        metric=meta.get("metric"),
+        filters=meta.get("filters"),
+        grouping=meta.get("grouping"),
         data_ts=compact_result["data_ts"],
         columns=compact_result["columns"],
         row_count=compact_result["row_count"],
