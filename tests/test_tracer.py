@@ -112,8 +112,9 @@ def run(tmp_path):
         t = Tracer(settings, CEO, "conv1")
         config = {"configurable": {"thread_id": "t1"}}
 
-        def turn(text):
-            payload = None if text is None else {"user_input": text, "user": CEO}
+        def turn(text, payload=None):
+            if payload is None:
+                payload = None if text is None else {"user_input": text, "user": CEO}
             with t.turn(graph, config, text) as cfg:
                 for _ in graph.stream(payload, cfg, stream_mode="updates"):
                     pass
@@ -297,7 +298,7 @@ def no_access_brand_result():
     (state(), ("answered", "OK")),
     (state(decline="off_topic"), ("declined", "OFF_TOPIC")),
     (state(decline="no_access"), ("declined", "NO_ACCESS")),
-    (state(decline="report_action"), ("declined", "REPORT_ACTION")),
+    (state(decline="destructive"), ("declined", "DESTRUCTIVE")),
     (state(decline="PII_IDENTIFIER"), ("declined", "PII_IDENTIFIER")),
     (state(decline="LEAK_BLOCKED"), ("declined", "LEAK_BLOCKED")),
     (state(budget=Budget(bq_down=True, stuck=True)), ("partial", "BQ_DOWN")),
@@ -336,3 +337,25 @@ def test_failed_turn_without_state_still_gets_a_trace_id(tmp_path):
     with pytest.raises(RuntimeError), t.turn(graph, {}, "hi"):
         raise RuntimeError("boom")
     assert len(t.last["trace_id"]) == 8 and t.last["reason"] == "INTERNAL"
+
+
+def test_confirmation_turn_awaits_and_the_reply_continues_it(run):
+    from langgraph.types import Command
+
+    from analyst.reports.replies import ReplyOutput
+    from analyst.state import Outline, Section
+
+    settings, make = run
+    plan = Outline(title="Q1", sections=[Section(title="Revenue", brief="b", source="new_queries")])
+    chats = {settings.models.light: [ClassifierOutput(intent="report_action", report_op="create", reason="t"),
+                                     ReplyOutput(decision="cancel", reason="t")],
+             settings.models.report: [plan]}
+    turn, t = make(chats)
+    first = turn("Create a Q1 report")
+    assert (first["outcome"], first["reason"]) == ("answered", "AWAITING_CONFIRMATION")
+    assert first["answer"].startswith("Report plan: Q1") and first["continues"] is None
+    assert spans(first, "plan")[0]["attributes"]["sections"] == ["Revenue (new_queries)"]
+    second = turn("cancel", Command(resume="cancel", update={"trace_id": "beefcafe", "continues": first["trace_id"]}))
+    assert second["trace_id"] == "beefcafe" and second["continues"] == first["trace_id"]
+    assert second["user_input"] == "cancel" and second["outcome"] == "answered" and second["reason"] == "OK"
+    assert spans(second, "confirm_outline")[0]["attributes"]["decision"] == "cancel"

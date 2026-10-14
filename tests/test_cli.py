@@ -131,7 +131,7 @@ def test_retry_resumes_the_stopped_turn_from_the_checkpoint(monkeypatch):
     graph = use_session(monkeypatch, LLMUnavailableError("down"), CEO, "Resumed answer")
     result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="revenue?\n/retry\n/retry\n/exit\n")
     assert "Type /retry" in result.output and "Resumed answer" in result.output
-    assert graph.inputs == [{"user_input": "revenue?", "user": CEO}, None]  # None resumes the checkpoint
+    assert graph.inputs == [{"user_input": "revenue?", "user": CEO, "conversation_id": "t"}, None]  # None resumes
     assert "Nothing to retry." in result.output  # second /retry: nothing pending
 
 
@@ -158,3 +158,56 @@ def test_status_line_text_for_updates():
     assert cli.status_for({"tools": {"turn_messages": [query, bad]}}) == "Checking the query..."
     assert cli.status_for({"output_check": {"turn_messages": [HumanMessage("fix")]}}) == "Checking the answer..."
     assert cli.status_for({"classify": {}}) is None
+
+
+class ConfirmingGraph(FakeGraph):
+    """First turn stops at a confirmation; the reply resumes it."""
+
+    def __init__(self):
+        super().__init__("Deleted 'Q1'.")
+        self.asking = False
+
+    def stream(self, payload, config, stream_mode=None):
+        self.inputs.append(payload)
+        self.asking = not self.asking and isinstance(payload, dict)
+        self.text = "Deleted 'Q1'."
+        yield {"confirm_delete": {}}
+
+    def get_state(self, config):
+        snap = super().get_state(config)
+        if self.asking:
+            snap.interrupts = (SimpleNamespace(value={"kind": "delete", "text": "This deletes 'Q1' and its earlier drafts."}),)
+        return snap
+
+
+def test_reply_to_a_confirmation_resumes_the_turn(monkeypatch):
+    from langgraph.types import Command
+
+    graph = ConfirmingGraph()
+    tracer = Tracer(load_settings(), CEO, "t")
+    monkeypatch.setattr(cli, "build_session", lambda user_id, faults=None: cli.Session(CEO, graph, "t", tracer))
+    result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="delete my Q1 report\ngo for it\n/exit\n")
+    assert "This deletes 'Q1' and its earlier drafts." in result.output and "Deleted 'Q1'." in result.output
+    resume = graph.inputs[1]
+    assert isinstance(resume, Command) and resume.resume == "go for it"
+    assert resume.update["continues"] == "7f3a1c2e" and resume.update["trace_id"] != "7f3a1c2e"
+    first, second = read_traces(Path("traces/t.jsonl"))
+    assert first["reason"] == "AWAITING_CONFIRMATION" and second["user_input"] == "go for it"
+
+
+def test_reports_and_download_commands(monkeypatch, tmp_path):
+    from analyst.store.base import NewVersion
+    from analyst.store.sqlite_store import SQLiteReportStore
+
+    reports = SQLiteReportStore(":memory:")
+    reports.save(CEO, NewVersion(conversation_id="c", title="Q1 report", body="# Q1 report\nBody", data_ts="2026-10-14",
+                                 trace_id="t"))
+    graph = FakeGraph("ok")
+    tracer = Tracer(load_settings(), CEO, "t")
+    monkeypatch.setattr(cli, "build_session",
+                        lambda user_id, faults=None: cli.Session(CEO, graph, "t", tracer, reports))
+    result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="/reports\n/download 1\n/download 9\n/exit\n",
+                           env={"COLUMNS": "150"})
+    assert "Q1 report" in result.output and "Saved a copy to reports/q1-report.md" in result.output
+    assert Path("reports/q1-report.md").read_text().startswith("# Q1 report")
+    assert "Give a report number from /reports" in result.output

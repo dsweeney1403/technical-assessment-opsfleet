@@ -105,6 +105,15 @@ def _label(span: dict) -> Text:
                      "grounding retry" if a.get("grounding_retry") else None, ms)
     if name == "decline":
         return _line("decline", ms)
+    if name == "plan":
+        return _line("plan", a.get("title"), f"{len(a.get('sections', []))} sections" if a.get("sections") else None, ms)
+    if name in ("confirm_outline", "confirm_delete"):
+        return _line(name.replace("_", " "), f"reply: {a['decision']}" if a.get("decision") else None, ms)
+    if name == "section":
+        return _line("section", a.get("section"), f"results {', '.join(a['result_ids'])}" if a.get("result_ids") else None,
+                     ms)
+    if name == "write":
+        return _line("write", a.get("title"), f"{a.get('findings', 0)} findings", f"{a.get('actions', 0)} actions", ms)
     return _line(name.replace("_", " "), ms, style=error)
 
 
@@ -126,7 +135,11 @@ def _details(span: dict, full: bool) -> list[Text]:
             out.append(_block("diagnosis", json.dumps(a["diagnosis"], default=str)))
     elif name == "tool_call" and a.get("tool") != "run_sql":
         out.append(_block("args", json.dumps(a.get("args"), default=str)))
-    elif name == "decline" and a.get("text"):
+    elif name == "plan" and a.get("sections"):
+        out += [_block(f"section {i}", t) for i, t in enumerate(a["sections"], 1)]
+        if a.get("user_context"):
+            out.append(_block("user context", "; ".join(a["user_context"])))
+    elif name in ("decline", "delete_reports") and a.get("text"):
         out.append(_block("text", a["text"]))
     elif name == "output_check" and a.get("leak_hits"):
         out.append(_block("leaks", "; ".join(a["leak_hits"]), "red"))
@@ -152,7 +165,10 @@ def render(record: dict, full: bool = False) -> Tree:
     header = Text(f"trace {record['trace_id']}", style="bold")
     header.append(f"  attempt {record['attempt']} · {user.get('id')} ({user.get('role')}) · {record['started_at']}"
                   f" · conversation {record['conversation_id']}", style="dim")
-    tree = Tree(Group(header, _block("question", record.get("user_input") or "")))
+    lines = [header, _block("question", record.get("user_input") or "")]
+    if record.get("continues"):
+        lines.append(_block("continues", f"trace {record['continues']}"))
+    tree = Tree(Group(*lines))
 
     def add(parent: Tree, span: dict) -> None:
         node = parent.add(_label(span))

@@ -32,7 +32,8 @@ from pydantic import BaseModel
 from analyst.config import Settings, User
 
 # Graph nodes that become spans. load_context and respond only move state around.
-TRACED_NODES = {"classify", "light_reply", "decline", "agent", "output_check", "save"}
+TRACED_NODES = {"classify", "light_reply", "decline", "agent", "output_check", "save", "plan", "confirm_outline",
+                "section", "write", "save_report", "download_report", "confirm_delete", "delete_reports"}
 SPAN_NAMES = {"agent": "agent_step"}
 
 # Outcome and reason (D2.17). Precedence for partial answers, first match wins.
@@ -244,6 +245,21 @@ def _node_attributes(span_name: str, outputs) -> dict:
                 "out_of_scope_brands": c.out_of_scope_brands, "decline": outputs.get("decline")}
     if span_name == "decline":
         return {"text": outputs["draft"].text} if outputs.get("draft") else {}
+    if span_name == "plan" and outputs.get("outline") is not None:
+        o = outputs["outline"]
+        return {"title": o.title, "sections": [f"{x.title} ({x.source})" for x in o.sections],
+                "user_context": o.user_context}
+    if span_name in ("confirm_outline", "confirm_delete") and outputs.get("decision"):
+        return {"decision": outputs["decision"]}
+    if span_name == "section" and outputs.get("sections_done"):
+        done = outputs["sections_done"][-1]
+        return {"section": done.title, "result_ids": done.result_ids}
+    if span_name == "write" and outputs.get("report") is not None:
+        r = outputs["report"]
+        return {"title": r.title, "findings": len(r.draft.findings) if r.draft else 0,
+                "actions": len(r.draft.actions) if r.draft else 0}
+    if span_name == "delete_reports" and outputs.get("draft") is not None:
+        return {"text": outputs["draft"].text}
     if span_name == "output_check":
         leaks = [e.detail for e in outputs.get("security_events", []) if e.code == "LEAK_BLOCKED"]
         return {"leak_hits": leaks, "numbers_removed": outputs.get("removed_numbers", []),
@@ -251,8 +267,10 @@ def _node_attributes(span_name: str, outputs) -> dict:
     return {}
 
 
-def outcome_for(state: dict, error: BaseException | None, cap: int) -> tuple[str, str]:
+def outcome_for(state: dict, error: BaseException | None, cap: int, awaiting: bool = False) -> tuple[str, str]:
     """One outcome and one reason code per turn (D2.17)."""
+    if awaiting and error is None:
+        return "answered", "AWAITING_CONFIRMATION"  # the reply is its own trace, linked by `continues`
     if error is not None:
         from analyst.llm.client import LLMFatalError, LLMUnavailableError
         from analyst.sql.gateway import GatewayFatalError
@@ -274,7 +292,7 @@ def outcome_for(state: dict, error: BaseException | None, cap: int) -> tuple[str
             found.add("BQ_DOWN")
         if budget.stuck:
             found.add("STUCK")
-        if budget.tool_calls_used >= cap:
+        if budget.cap_hit or budget.tool_calls_used >= cap:
             found.add("BUDGET_SPENT")
     if state.get("removed_numbers"):
         found.add("GROUNDING_REMOVED")
@@ -334,7 +352,10 @@ class Tracer:
             except Exception:
                 pass  # a tracing problem must never hide the error the user needs to see
             raise
-        self.last = self.finish(handler, started_ns, started_at, graph.get_state(config).values, None, user_input)
+        snapshot = graph.get_state(config)
+        interrupts = getattr(snapshot, "interrupts", ()) or ()
+        self.last = self.finish(handler, started_ns, started_at, snapshot.values, None, user_input,
+                                awaiting=interrupts[0].value.get("text") if interrupts else None)
 
     @property
     def path(self) -> Path:
@@ -344,12 +365,14 @@ class Tracer:
         return TraceHandler(), now_ns(), datetime.now(UTC).isoformat(timespec="seconds")
 
     def finish(self, handler: TraceHandler, started_ns: int, started_at: str, state: dict,
-               error: BaseException | None = None, user_input: str | None = None) -> dict:
+               error: BaseException | None = None, user_input: str | None = None,
+               awaiting: str | None = None) -> dict:
+        """`awaiting` is the confirmation text shown, when the turn stopped to ask the user."""
         trace_id = state.get("trace_id") or uuid.uuid4().hex[:8]
         attempt = self._attempts.get(trace_id, 0) + 1
         self._attempts[trace_id] = attempt
         cap = self.settings.budgets.max_tool_calls_per_turn
-        outcome, reason = outcome_for(state, error, cap)
+        outcome, reason = outcome_for(state, error, cap, awaiting is not None)
         end = now_ns()
         spans = handler.spans
         gateway = [s for s in spans if s.name == "gateway"]
@@ -359,7 +382,7 @@ class Tracer:
             "tokens": sum(s.attributes.get("tokens", {}).get("total", 0) for s in llm),
             "bytes": sum(s.attributes.get("bytes_billed") or 0 for s in gateway),
             "latency_ms": round((end - started_ns) / 1e6),
-            "tool_calls": budget.tool_calls_used if budget else 0,
+            "tool_calls": budget.tool_calls_used + budget.section_tool_calls if budget else 0,
             "llm_calls": len(llm),
             "llm_retries": sum(s.attributes.get("retries", 0) for s in llm),
             "bq_retries": sum(s.attributes.get("transient_retries", 0) for s in gateway),
@@ -375,6 +398,7 @@ class Tracer:
             "trace_id": trace_id,
             "conversation_id": self.conversation_id,
             "attempt": attempt,
+            "continues": state.get("continues"),
             "user": {"id": self.user.id, "role": self.user.role},
             "started_at": started_at,
             "models": {"agent": [models.agent, *models.agent_fallbacks],
@@ -383,7 +407,7 @@ class Tracer:
             "outcome": outcome,
             "reason": reason,
             "error": f"{type(error).__name__}: {error}" if error is not None else None,
-            "answer": draft.text if draft is not None and error is None else None,
+            "answer": awaiting or (draft.text if draft is not None and error is None else None),
             "totals": totals,
             "security_events": jsonable(state.get("security_events", [])),
             "spans": [asdict(s) for s in [root, *spans]],

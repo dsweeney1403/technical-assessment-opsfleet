@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import typer
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.types import Command
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
@@ -32,6 +33,8 @@ Commands:
   /whoami   show who you are signed in as and which brands you can see
   /retry    pick up a question that stopped because Gemini was unavailable
   /stats    session metrics: business view and engineering view
+  /reports  list your saved reports
+  /download <number>  save a copy of a report from /reports to the reports/ folder
   /exit     leave the chat"""
 LLM_DOWN = "Gemini is busy or unreachable right now. Type /retry to pick up where it stopped."
 REPAIRABLE = {"PARSE_ERROR", "MULTI_STATEMENT", "UNKNOWN_TABLE", "GEO_TOO_FINE", "NO_ACCESS_BRAND",
@@ -46,7 +49,9 @@ class Session:
     graph: object
     thread_id: str
     tracer: Tracer
+    reports: object = None  # ReportStore
     pending: bool = False  # the last turn stopped on an LLM outage and can resume (D2.13)
+    awaiting: str | None = None  # trace id of a turn waiting for a confirmation reply (D3.2, D3.20)
 
     @property
     def config(self) -> dict:
@@ -61,7 +66,9 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     from analyst.sql.brands import BrandMatcher
     from analyst.sql.diagnosis import load_known_values
     from analyst.sql.gateway import BQ_ERRORS, Gateway, load_brands, load_curated
+    from analyst.reports.mentions import MentionScanner
     from analyst.store.results import ResultStore
+    from analyst.store.sqlite_store import SQLiteReportStore
 
     from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -84,9 +91,12 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     gateway = Gateway(settings.bigquery, client, store, curated, brands, known=known, empty=settings.empty_results)
     factory = fault_injection.chat_factory(ChatGoogleGenerativeAI, faults, settings.models.agent)
     llm = LLM(settings, env.gemini_api_key, chat_factory=factory)
-    graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known))
+    reports = SQLiteReportStore(settings.reports.sqlite_path)
+    reports.purge(settings.reports.purge_after_days)  # D3.23; production runs this as a scheduled job
+    graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known, reports=reports,
+                             mentions=MentionScanner(brands.all_brands, known)))
     thread_id = uuid.uuid4().hex
-    return Session(user, graph, thread_id, Tracer(settings, user, thread_id))
+    return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports)
 
 
 @contextmanager
@@ -123,6 +133,18 @@ def status_for(update: dict) -> str | None:
             return "Thinking..."
         if node == "output_check" and isinstance(last, HumanMessage):
             return "Checking the answer..."
+        if node == "plan" and (delta or {}).get("outline") is not None:
+            outline = delta["outline"]
+            if not any(sec.source == "new_queries" for sec in outline.sections):
+                return f"Writing '{outline.title}' from this chat's results..."  # outline as a status line (D3.2)
+            return "Planning the report..."
+        if node == "confirm_outline" and (delta or {}).get("decision") == "yes":
+            return "Running the report sections..."
+        if node == "section" and (delta or {}).get("sections_done"):
+            done = delta["sections_done"]
+            return f"Finished section {len(done)}: {done[-1].title}. Working..."
+        if node == "write":
+            return "Checking the report..."
     return None
 
 
@@ -135,8 +157,15 @@ def _error_code(content) -> str | None:
 
 def answer(session: Session, text: str | None) -> None:
     """Run one turn, or resume the stopped one when text is None (/retry)."""
-    payload = None if text is None else {"user_input": text, "user": session.user}
+    if text is None:
+        payload = None
+    elif session.awaiting:
+        # A reply to a confirmation resumes the stopped turn, as a new trace that continues it (D2.19).
+        payload = Command(resume=text, update={"trace_id": uuid.uuid4().hex[:8], "continues": session.awaiting})
+    else:
+        payload = {"user_input": text, "user": session.user, "conversation_id": session.thread_id}
     session.pending = False
+    session.awaiting = None
     session.tracer.last = None
     try:
         with (session.tracer.turn(session.graph, session.config, text) as config,
@@ -148,10 +177,42 @@ def answer(session: Session, text: str | None) -> None:
     except LLMUnavailableError:
         session.pending = True  # the checkpoint holds the turn up to the failed step
         raise
-    state = session.graph.get_state(session.config).values
+    snapshot = session.graph.get_state(session.config)
+    interrupts = getattr(snapshot, "interrupts", ()) or ()
+    if interrupts:
+        session.awaiting = snapshot.values.get("trace_id") or "unknown"
+        console.print(interrupts[0].value["text"], markup=False)
+        return
+    state = snapshot.values
     console.print(Markdown(state["draft"].text or "(no answer)"))
     for path in state["draft"].chart_paths:
         console.print(f"[green]Chart saved:[/green] {path}")
+
+
+def show_reports(session: Session) -> list:
+    saved = session.reports.list(session.user) if session.reports is not None else []
+    if not saved:
+        console.print("No saved reports.")
+        return []
+    table = Table(show_header=True, header_style="bold")
+    for col in ("#", "Title", "Saved", "Data as of"):
+        table.add_column(col)
+    for i, r in enumerate(saved, 1):
+        table.add_row(str(i), r.title, r.created_at, r.data_ts)
+    console.print(table)
+    return saved
+
+
+def download_numbered(session: Session, arg: str) -> None:
+    from analyst.graph import download
+
+    saved = session.reports.list(session.user) if session.reports is not None else []
+    if not arg.isdigit() or not 1 <= int(arg) <= len(saved):
+        console.print("Give a report number from /reports, for example /download 1.")
+        return
+    r = saved[int(arg) - 1]
+    path = download(r.title, r.body, r.chart_files, load_settings().reports.download_dir)
+    console.print(f"Saved a copy to {path}. A downloaded copy is outside the app's access controls.", markup=False)
 
 
 def trace_line(session: Session) -> None:
@@ -212,6 +273,10 @@ def chat(
             console.print(whoami(session.user), markup=False)
         elif text == "/stats":
             show_stats(session)
+        elif text == "/reports":
+            show_reports(session)
+        elif text.startswith("/download"):
+            download_numbered(session, text.removeprefix("/download").strip())
         elif text == "/retry":
             if not session.pending:
                 console.print("Nothing to retry.")
