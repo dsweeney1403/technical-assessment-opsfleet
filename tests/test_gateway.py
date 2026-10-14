@@ -6,7 +6,15 @@ from google.api_core import exceptions as gexc
 
 from analyst.config import User, load_settings
 from analyst.sql.brands import BrandMatcher
-from analyst.sql.gateway import Gateway, GatewayFatalError, SafetyStop, load_curated, wrap_sql
+from analyst.sql.gateway import (
+    Gateway,
+    GatewayFatalError,
+    GatewayUnavailableError,
+    SafetyStop,
+    classify_bq_error,
+    load_curated,
+    wrap_sql,
+)
 from analyst.sql.scope import BRAND_PARAM, scoped_tables
 from analyst.store.results import ResultNotFound, ResultStore
 from analyst.tools.run_sql import make_run_sql_tool
@@ -37,23 +45,32 @@ class FakeJob:
 
 
 class FakeClient:
-    def __init__(self, df=None, bytes_=1000, dry_exc=None, result_exc=None):
+    def __init__(self, df=None, bytes_=1000, dry_exc=None, result_exc=None, dry_excs=(), result_excs=()):
         self.df, self.bytes_, self.dry_exc, self.result_exc = df, bytes_, dry_exc, result_exc
+        self.dry_excs, self.result_excs = list(dry_excs), list(result_excs)  # one per call, then success
         self.queries = []
         self.last_job = None
 
     def query(self, sql, job_config=None):
         self.queries.append((sql, job_config))
         if job_config.dry_run:
+            if self.dry_excs:
+                raise self.dry_excs.pop(0)
             if self.dry_exc:
                 raise self.dry_exc
             return FakeJob(bytes_=self.bytes_)
-        self.last_job = FakeJob(df=self.df if self.df is not None else pd.DataFrame({"a": [1]}), result_exc=self.result_exc)
+        exc = self.result_excs.pop(0) if self.result_excs else self.result_exc
+        self.last_job = FakeJob(df=self.df if self.df is not None else pd.DataFrame({"a": [1]}), result_exc=exc)
         return self.last_job
 
 
-def gateway(client, store=None):
-    return Gateway(load_settings().bigquery, client, store or ResultStore(), CURATED, BRANDS)
+def gateway(client, store=None, settings=None):
+    return Gateway(settings or load_settings().bigquery, client, store or ResultStore(), CURATED, BRANDS,
+                   sleep=lambda s: None)
+
+
+def bq_error(cls, reason, message="m"):
+    return cls(message, errors=[{"reason": reason, "message": message}])
 
 
 # Curated tables and wrapping
@@ -185,3 +202,59 @@ def test_run_sql_tool_returns_json():
 def test_store_unknown_id():
     with pytest.raises(ResultNotFound, match="none yet"):
         ResultStore().get("r9")
+
+
+# Error codes by reason, transient retries (D2.3, D2.4)
+
+@pytest.mark.parametrize("exc, code", [
+    (bq_error(gexc.InternalServerError, "bytesBilledLimitExceeded"), "COST_LIMIT"),  # a 500 that isn't transient
+    (bq_error(gexc.Forbidden, "rateLimitExceeded"), "BQ_TRANSIENT"),  # a 403 that is transient
+    (bq_error(gexc.Forbidden, "quotaExceeded"), "BQ_FATAL"),
+    (bq_error(gexc.Forbidden, "billingNotEnabled"), "BQ_FATAL"),
+    (bq_error(gexc.BadRequest, "invalidQuery"), "BQ_INVALID"),
+    (bq_error(gexc.InternalServerError, "backendError"), "BQ_TRANSIENT"),
+    (gexc.ServiceUnavailable("down"), "BQ_TRANSIENT"),
+    (gexc.BadRequest("no reason"), "BQ_INVALID"),
+    (gexc.Forbidden("no reason"), "BQ_FATAL"),
+    (ConnectionError("reset"), "BQ_TRANSIENT"),
+])
+def test_classify_by_reason_then_status(exc, code):
+    assert classify_bq_error(exc) == code
+
+
+def test_billing_cap_at_execution_is_cost_limit_not_retried():
+    client = FakeClient(result_excs=[bq_error(gexc.InternalServerError, "bytesBilledLimitExceeded")])
+    out = gateway(client).run("SELECT * FROM sales", CEO)
+    assert out["error"]["code"] == "COST_LIMIT" and out["error"]["hint"].startswith("Select fewer columns")
+    assert len(client.queries) == 2  # one dry run, one execution
+
+
+def test_transient_errors_are_retried_invisibly():
+    client = FakeClient(dry_excs=[bq_error(gexc.Forbidden, "rateLimitExceeded")],
+                        result_excs=[gexc.ServiceUnavailable("blip")])
+    gw = gateway(client)
+    out = gw.run("SELECT a FROM sales", CEO)
+    assert out["result_id"] == "r1" and gw.transient_retries == 2
+
+
+def test_transient_errors_past_the_limit_mean_bigquery_is_down():
+    client = FakeClient(result_excs=[gexc.ServiceUnavailable("down")] * 5)
+    with pytest.raises(GatewayUnavailableError):
+        gateway(client).run("SELECT a FROM sales", CEO)
+    assert len(client.queries) == 1 + load_settings().bigquery.transient_max_attempts
+
+
+def test_fatal_reason_is_not_retried():
+    client = FakeClient(dry_exc=bq_error(gexc.Forbidden, "quotaExceeded", "Quota exceeded"))
+    with pytest.raises(GatewayFatalError, match="Quota exceeded.*doctor"):
+        gateway(client).run("SELECT a FROM sales", CEO)
+    assert len(client.queries) == 1
+
+
+def test_lowered_processing_cap_blocks_wide_query_and_lets_narrow_one_run():
+    settings = load_settings().bigquery.model_copy(update={"max_bytes_processed": 15_000_000})
+    wide = gateway(FakeClient(bytes_=20_400_000), settings=settings).run("SELECT * FROM sales", CEO)
+    assert wide["error"]["code"] == "COST_LIMIT"
+    client = FakeClient(bytes_=10_700_000)
+    assert "result_id" in gateway(client, settings=settings).run("SELECT state FROM sales", CEO)
+    assert client.queries[-1][1].maximum_bytes_billed == load_settings().bigquery.maximum_bytes_billed

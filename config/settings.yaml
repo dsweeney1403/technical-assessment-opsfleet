@@ -25,7 +25,8 @@ circuit_breaker:                      # D2.12
 
 bigquery:
   dataset: bigquery-public-data.thelook_ecommerce
-  maximum_bytes_billed: 200000000     # 200 MB; whole dataset is ~45 MB. Lower to 1 MB to demo COST_LIMIT (D2.3)
+  max_bytes_processed: 200000000      # our dry-run gate (D2.3). Demo COST_LIMIT with 15000000: SELECT * (20 MB) fails, a narrow query (10 MB) runs
+  maximum_bytes_billed: 200000000     # BigQuery's own backstop. Leave it: every sales query is billed at least 42 MB (10 MiB per table)
   job_timeout_s: 30
   transient_max_attempts: 3           # BQ_TRANSIENT (D2.4)
   preview_rows_to_model: 50

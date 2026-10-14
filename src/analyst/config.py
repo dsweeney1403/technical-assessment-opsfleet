@@ -51,7 +51,8 @@ class LLMRetry(_Strict):
 
 class BigQuerySettings(_Strict):
     dataset: str
-    maximum_bytes_billed: int = Field(gt=0)
+    max_bytes_processed: int = Field(gt=0)  # dry-run gate, lowerable for the demo (D2.3)
+    maximum_bytes_billed: int = Field(gt=0)  # BigQuery's own backstop
     job_timeout_s: float = Field(gt=0)
     transient_max_attempts: int = Field(ge=1)
     preview_rows_to_model: int = Field(ge=1)

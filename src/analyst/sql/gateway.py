@@ -4,20 +4,29 @@ Steps: validate (SELECT-only, allowed tables and columns), brand backstop,
 scope rewrite, dry run and bytes cap, execute, store, compact result. There is
 no other path to BigQuery. Stop codes raise SafetyStop and end the turn (D2.1);
 other codes return {"error": {code, message, hint}} for the agent to repair.
-Phase 3 adds BQ_TRANSIENT retries, diagnosis on empty results and the stuck rule.
+
+BigQuery errors are coded by their reason field, never the message or status
+alone (D2.4): a cost limit arrives as HTTP 500 with reason
+bytesBilledLimitExceeded, and a per-second rate limit as 403 with reason
+rateLimitExceeded. BQ_TRANSIENT is retried here, invisible to the agent; when
+retries run out, GatewayUnavailableError ends querying for the turn (D2.13).
 """
 
 from __future__ import annotations
 
 import json
+import random
 import re
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 from google.api_core import exceptions as gexc
-from google.auth.exceptions import DefaultCredentialsError
+from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from google.cloud import bigquery
 
 from analyst.config import BigQuerySettings, User
@@ -28,10 +37,15 @@ from analyst.store.results import ResultStore
 
 CURATED_SQL = Path(__file__).with_name("curated.sql")
 DOCTOR_HINT = "Run `python -m analyst doctor` to check your setup."
+COST_HINT = "Select fewer columns or narrow the date range."
 
 
 class GatewayFatalError(Exception):
     """BigQuery can't be used at all (credentials, permissions). BQ_FATAL: not for the agent to repair."""
+
+
+class GatewayUnavailableError(Exception):
+    """BQ_TRANSIENT retries ran out: BigQuery is down for now (D2.13)."""
 
 
 class SafetyStop(Exception):
@@ -79,6 +93,54 @@ def wrap_sql(sql: str, tables: dict[str, str]) -> str:
     return f"WITH {ctes}\n{body}"
 
 
+BQ_ERRORS = (gexc.GoogleAPICallError, DefaultCredentialsError, RefreshError, RequestsConnectionError, ConnectionError)
+REASON_CODES = {
+    "invalidQuery": "BQ_INVALID",
+    "invalid": "BQ_INVALID",
+    "resourcesExceeded": "BQ_INVALID",  # query too complex: the agent can simplify it
+    "bytesBilledLimitExceeded": "COST_LIMIT",
+    "backendError": "BQ_TRANSIENT",
+    "internalError": "BQ_TRANSIENT",
+    "rateLimitExceeded": "BQ_TRANSIENT",  # per second, clears on its own
+    "jobBackendError": "BQ_TRANSIENT",
+    "jobInternalError": "BQ_TRANSIENT",
+    "accessDenied": "BQ_FATAL",
+    "quotaExceeded": "BQ_FATAL",  # usually daily: same look as rateLimitExceeded, opposite handling
+    "billingNotEnabled": "BQ_FATAL",
+    "billingTierLimitExceeded": "BQ_FATAL",
+    "notFound": "BQ_FATAL",
+}
+BACKOFF_BASE_S = 1.0
+
+
+def _reason(exc: Exception) -> str | None:
+    errors = getattr(exc, "errors", None) or []
+    if errors and isinstance(errors[0], dict):
+        return errors[0].get("reason")
+    return None
+
+
+def classify_bq_error(exc: Exception) -> str:
+    """Gateway code for a BigQuery failure. The reason field decides; status is only a fallback."""
+    if isinstance(exc, (DefaultCredentialsError, RefreshError)):
+        return "BQ_FATAL"
+    if isinstance(exc, (RequestsConnectionError, ConnectionError)):
+        return "BQ_TRANSIENT"
+    code = REASON_CODES.get(_reason(exc) or "")
+    if code:
+        return code
+    status = getattr(exc, "code", None)
+    if isinstance(status, int) and status >= 500:
+        return "BQ_TRANSIENT"
+    if status == 400:
+        return "BQ_INVALID"
+    return "BQ_FATAL"
+
+
+class _Timeout(Exception):
+    pass
+
+
 def _bq_message(exc: Exception) -> str:
     errors = getattr(exc, "errors", None) or []
     if errors and isinstance(errors[0], dict) and errors[0].get("message"):
@@ -112,6 +174,34 @@ class Gateway:
     store: ResultStore
     curated: dict[str, str]
     brands: BrandMatcher
+    sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
+    transient_retries: int = 0  # cumulative for the session, for the trace (phase 4)
+
+    def _retrying(self, fn: Callable):
+        """Run fn, retrying BQ_TRANSIENT with backoff and jitter (D2.4)."""
+        attempts = self.settings.transient_max_attempts
+        for attempt in range(1, attempts + 1):
+            try:
+                return fn()
+            except BQ_ERRORS as exc:
+                if classify_bq_error(exc) != "BQ_TRANSIENT":
+                    raise
+                if attempt == attempts:
+                    raise GatewayUnavailableError(f"BigQuery is unavailable: {_bq_message(exc)}") from exc
+                self.transient_retries += 1
+                self.sleep(BACKOFF_BASE_S * 2 ** (attempt - 1) * (0.5 + random.random()))
+        raise AssertionError("unreachable")
+
+    def _execute(self, sql: str, params: list) -> pd.DataFrame:
+        job = self.client.query(
+            sql, job_config=bigquery.QueryJobConfig(maximum_bytes_billed=self.settings.maximum_bytes_billed,
+                                                    query_parameters=params)
+        )
+        try:
+            return job.result(timeout=self.settings.job_timeout_s).to_dataframe(create_bqstorage_client=False)
+        except (TimeoutError, gexc.RetryError, gexc.DeadlineExceeded) as exc:
+            job.cancel()
+            raise _Timeout() from exc
 
     def run(self, sql: str, user: User) -> dict:
         checked = validate(sql)
@@ -126,29 +216,27 @@ class Gateway:
 
         tables, params = scoped_tables(self.curated, user)
         rewritten = wrap_sql(sql, tables)
-        cap = self.settings.maximum_bytes_billed
+        cap = self.settings.max_bytes_processed
         try:
-            dry = self.client.query(
+            dry = self._retrying(lambda: self.client.query(
                 rewritten,
                 job_config=bigquery.QueryJobConfig(dry_run=True, use_query_cache=False, query_parameters=params),
-            )
+            ))
             scanned = dry.total_bytes_processed or 0
             if scanned > cap:
                 return _error("COST_LIMIT", f"Query would scan {scanned / 1e6:.1f} MB; the cap is {cap / 1e6:.1f} MB.",
-                              "Select fewer columns or narrow the date range.")
-            job = self.client.query(
-                rewritten, job_config=bigquery.QueryJobConfig(maximum_bytes_billed=cap, query_parameters=params)
-            )
-            try:
-                df = job.result(timeout=self.settings.job_timeout_s).to_dataframe(create_bqstorage_client=False)
-            except (TimeoutError, gexc.RetryError, gexc.DeadlineExceeded):
-                job.cancel()
-                return _error("TIMEOUT", f"Query took longer than {self.settings.job_timeout_s:.0f} s and was cancelled.",
-                              "Aggregate earlier or narrow the date range.")
-        except (gexc.Unauthorized, gexc.Forbidden, DefaultCredentialsError) as exc:
-            raise GatewayFatalError(f"BigQuery refused access: {_bq_message(exc)}. {DOCTOR_HINT}") from exc
-        except gexc.BadRequest as exc:
-            return _error("BQ_INVALID", _bq_message(exc), "Fix the SQL using BigQuery's message and try again.")
+                              COST_HINT)
+            df = self._retrying(lambda: self._execute(rewritten, params))
+        except _Timeout:
+            return _error("TIMEOUT", f"Query took longer than {self.settings.job_timeout_s:.0f} s and was cancelled.",
+                          "Aggregate earlier or narrow the date range.")
+        except BQ_ERRORS as exc:
+            code = classify_bq_error(exc)
+            if code == "COST_LIMIT":
+                return _error("COST_LIMIT", f"Query is over the billing cap: {_bq_message(exc)}", COST_HINT)
+            if code == "BQ_INVALID":
+                return _error("BQ_INVALID", _bq_message(exc), "Fix the SQL using BigQuery's message and try again.")
+            raise GatewayFatalError(f"BigQuery refused the request: {_bq_message(exc)}. {DOCTOR_HINT}") from exc
         data_ts = datetime.now(UTC).isoformat(timespec="seconds")
         stored = self.store.put(df, sql, rewritten, data_ts, meta=describe(checked.tree))
         return compact(stored, df, self.settings.preview_rows_to_model)
