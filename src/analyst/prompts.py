@@ -50,8 +50,9 @@ def _out_of_scope_block(brands: list[str]) -> str:
         return ""
     names = ", ".join(brands)
     verb = "is" if len(brands) == 1 else "are"
-    return (f"\nThe user mentioned brands outside their access: {names}. Answer for the user's own brands only "
-            f"and say plainly that {names} {verb} outside their access. Never say {names} had no sales or no data.\n")
+    return (f"\nThe user mentioned brands outside their access: {names}. Answer for the user's own brands only. "
+            f"The app adds a note that {names} {verb} outside their access, so don't repeat it. "
+            f"Never say {names} had no sales or no data.\n")
 
 
 def agent_system(user: User, today: date, records: str, summary: str, out_of_scope: list[str] = ()) -> str:
