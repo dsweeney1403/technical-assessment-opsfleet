@@ -31,6 +31,7 @@ Commands:
   /help     show this help
   /whoami   show who you are signed in as and which brands you can see
   /retry    pick up a question that stopped because Gemini was unavailable
+  /stats    session metrics: business view and engineering view
   /exit     leave the chat"""
 LLM_DOWN = "Gemini is busy or unreachable right now. Type /retry to pick up where it stopped."
 REPAIRABLE = {"PARSE_ERROR", "MULTI_STATEMENT", "UNKNOWN_TABLE", "GEO_TOO_FINE", "NO_ACCESS_BRAND",
@@ -159,6 +160,19 @@ def trace_line(session: Session) -> None:
         console.print(f"[grey50]trace {session.tracer.last['trace_id']}[/grey50]")
 
 
+def show_stats(session: Session) -> None:
+    from analyst.observability import stats
+    from analyst.observability.tracer import read_traces
+
+    records = read_traces(session.tracer.path)
+    if not records:
+        console.print("No turns yet.")
+        return
+    for table in stats.render(stats.compute(records)):
+        console.print(table)
+        console.print()
+
+
 @app.command()
 def chat(
     user: str = typer.Option(..., "--user", help="User id from config/users.yaml"),
@@ -196,6 +210,8 @@ def chat(
             console.print(HELP, markup=False)
         elif text == "/whoami":
             console.print(whoami(session.user), markup=False)
+        elif text == "/stats":
+            show_stats(session)
         elif text == "/retry":
             if not session.pending:
                 console.print("Nothing to retry.")
