@@ -1,0 +1,358 @@
+# Build config/brand_stoplist.txt: brand names the leak scan skips (D1.16).
+#
+# A brand is skipped when it would match ordinary text in an answer:
+# - 2 characters or fewer, or no letters at all (numbers like 686 or 1826)
+# - a single common English word (lowercase entries in /usr/share/dict/words that are not also
+#   proper nouns, so Canada and Jordan stay in), month or weekday
+# - a few several-word brands that read like analysis labels ("Age Group", "East Coast").
+#   Other several-word brands stay in: matching is case-sensitive, so a title-case
+#   phrase like "True Religion" almost only appears when it means the brand.
+# - all-caps single words stay in ("GUESS", "PUMA") for the same reason
+# - equal to, or a whole phrase inside, a data value (category, department, status,
+#   traffic source, country, state, city), e.g. "Carolina" in "North Carolina"
+# Built from the live catalogue on 2026-10-14. Brands added later are scanned (fails safe).
+# Run from the repo root with the venv active: python .development/brand_stoplist.py
+# 343 of 2756 brands.
+1826	# short or numeric
+5.11	# short or numeric
+686	# short or numeric
+ANS	# data value: ans
+ARROW	# data value: broken arrow
+Acne	# common word
+Active Products	# reads like a label
+Addison	# data value: addison
+Affliction	# common word
+Age Group	# reads like a label
+Alexanders	# common word
+Aloha	# data value: aloha
+Altamont	# data value: altamont
+Alternative	# common word
+Ambiguous	# common word
+Ames	# data value: ames
+Anemone	# common word
+Anew	# common word
+Anvil	# common word
+Apparel	# common word
+Aqua	# common word
+Arbor	# common word
+Arena	# common word
+AriZona	# data value: arizona
+Armada	# common word
+Assets	# common word
+Augusta	# data value: augusta
+Aventura	# data value: aventura
+Avenue	# common word
+Aviator	# common word
+Avital	# common word
+BB	# short or numeric
+BG	# short or numeric
+Badger	# common word
+Bailey	# common word
+Barracuda	# common word
+Basic	# common word
+Bass	# common word
+Bella	# data value: bella vista
+Bench	# common word
+Billabong	# common word
+BluePrint	# common word
+Blueprint	# common word
+Boca	# data value: boca del mar
+Bonfire	# common word
+Bonus	# common word
+Boob	# common word
+Bordeaux	# data value: bordeaux
+Bravado	# common word
+Braza	# common word
+Brighton	# data value: brighton
+Browning	# common word
+Buff	# common word
+Buffalo	# common word
+Bullhead	# common word
+Bump	# common word
+Bungalow	# common word
+Burnside	# common word
+Burton	# common word
+Buxton	# data value: buxton
+CB	# short or numeric
+Cameo	# common word
+Candela	# common word
+Canvas	# common word
+Carnival	# common word
+Carolina	# data value: south carolina
+Caterpillar	# common word
+Champion	# common word
+Chaos	# common word
+Chap	# common word
+Chaps	# common word
+Chasse	# common word
+Chaus	# common word
+Cinch	# common word
+Citizen	# common word
+Clever	# common word
+Coach	# common word
+Coal	# common word
+Cocoon	# common word
+Cohesive	# common word
+Columbia	# data value: columbia heights
+Commando	# common word
+Condor	# common word
+Connected	# common word
+Converse	# common word
+Coquette	# common word
+Cornerstone	# common word
+Corona	# common word
+Cortland	# data value: cortland west
+Covington	# data value: covington
+Craft	# common word
+Crescent	# common word
+D&Y	# short or numeric
+DC	# short or numeric
+Dakota	# data value: south dakota
+Danbury	# data value: danbury
+DandY	# common word
+Democracy	# common word
+Diesel	# common word
+District	# common word
+Diva	# common word
+Drake	# common word
+EAGLE	# data value: eagle mountain
+East Coast	# reads like a label
+Easy	# common word
+Electric	# common word
+Element	# common word
+Eliana	# data value: la eliana
+Elixir	# common word
+Elwood	# data value: elwood
+Essential Apparel	# reads like a label
+Fashion	# common word
+Fashion Apparel	# reads like a label
+Fever	# common word
+Firefly	# common word
+Fisherman	# common word
+Fishworks	# common word
+Flip	# common word
+Flirt	# common word
+Fluff	# common word
+Footprint	# common word
+Forum	# common word
+Fossil	# common word
+Fox	# common word
+Free Country	# reads like a label
+Freeze	# common word
+Fullness	# common word
+G & S	# short or numeric
+G&G	# short or numeric
+GM	# short or numeric
+Garfield	# data value: garfield heights
+George	# data value: king george
+Glamour	# common word
+Goddess	# common word
+Gore	# common word
+Grane	# common word
+Grass	# common word
+Gravity	# common word
+Grenade	# common word
+Grenier	# data value: bois-grenier
+H	# short or numeric
+HOT	# data value: hot springs
+Habitual	# common word
+Handful	# common word
+Heritage	# common word
+Hip	# common word
+Holden	# common word
+Hollister	# data value: hollister
+House Brand	# reads like a label
+Howe	# common word
+Hudson	# data value: hudson
+Hurley	# common word
+Hydraulic	# common word
+I5	# short or numeric
+Ibex	# common word
+Ice	# common word
+Icebreaker	# common word
+Icon	# common word
+Illusion	# common word
+Independent	# common word
+Insight	# common word
+Intimates	# data value: intimates
+JM	# short or numeric
+Jackson	# data value: jackson
+Jockey	# common word
+Jolt	# common word
+Jordan	# data value: south jordan
+Just One	# reads like a label
+Kalon	# common word
+Kawasaki	# data value: kawasaki city
+Keen	# common word
+Kiss	# common word
+Knocker	# common word
+Ks	# short or numeric
+L1	# short or numeric
+Ladies First	# reads like a label
+Lee	# data value: fort lee
+Legend	# common word
+Liberty	# common word
+Lingerie	# common word
+Liverpool	# data value: liverpool
+Longitude	# common word
+Lost	# common word
+Louisville	# data value: louisville
+Loyal	# common word
+MG	# short or numeric
+MR	# short or numeric
+MW	# short or numeric
+Madison	# data value: madison charter township
+Magic	# common word
+Marine	# common word
+Marmot	# common word
+Marshal	# common word
+Mascot	# common word
+Match	# common word
+Matrix	# common word
+Modena	# common word
+Monarchy	# common word
+Monologue	# common word
+Motel	# common word
+Mother	# common word
+NEXT LEVEL	# reads like a label
+National	# common word
+Newport News	# data value: newport news
+Next Level	# reads like a label
+Nirvana	# common word
+Oakley	# data value: oakley
+Obey	# common word
+Obviously	# common word
+Of the Moment	# reads like a label
+Omega	# common word
+Omit	# common word
+Ozone	# common word
+Palmer	# common word
+Panache	# common word
+Paradox	# common word
+Parfait	# common word
+Parker	# common word
+Parquet	# common word
+Pashmina	# common word
+Pendleton	# data value: camp pendleton north
+Perry	# data value: mount perry
+Phases	# common word
+Pistil	# common word
+Playboy	# common word
+Plush	# common word
+Polar	# common word
+Pony	# common word
+Poof	# common word
+Port	# common word
+Postage	# common word
+Princeton	# data value: princeton
+Private Label	# reads like a label
+Profile	# common word
+Propper	# common word
+Provocative	# common word
+Pulse	# common word
+QT	# short or numeric
+Queen	# common word
+Rainbow	# common word
+Rampage	# common word
+Raven	# common word
+Rebel	# common word
+Reef	# common word
+Request	# common word
+Reward	# common word
+Rewash	# common word
+Ride	# common word
+Rival	# common word
+River Road	# data value: river road
+Roar	# common word
+Robinson	# data value: robinson
+Rocky	# common word
+Rooster	# common word
+Royal	# common word
+Runway	# common word
+SY	# short or numeric
+SZ	# short or numeric
+Salomon	# common word
+Sanctuary	# common word
+Sassy	# common word
+Sauce	# common word
+Scala	# common word
+Seraphine	# common word
+Serenity	# common word
+Simple	# common word
+Single	# common word
+Smith	# common word
+Snob	# common word
+Solid Color	# reads like a label
+Spalding	# common word
+Special Blend	# reads like a label
+Splendid	# common word
+Sportsman	# common word
+Sprawl	# common word
+Spree	# common word
+Squish	# common word
+Stance	# common word
+Standard Supply	# reads like a label
+Star	# data value: north star
+Subculture	# common word
+Sullen	# common word
+Sunset	# common word
+Superman	# common word
+Swan	# common word
+Sweet	# common word
+Swill	# common word
+Synergy	# common word
+TD	# short or numeric
+Tart	# common word
+Taylor	# data value: taylor
+Team	# common word
+Tehama	# data value: rancho tehama reserve
+Testament	# common word
+The Best Dressed	# reads like a label
+The Natural	# reads like a label
+The West Coast	# reads like a label
+Theory	# common word
+Threadless	# common word
+Throwdown	# common word
+Tiffany	# common word
+Tilley	# common word
+Timberland	# common word
+Top Quality Products	# reads like a label
+Torrid	# common word
+Tribal	# common word
+Trump	# common word
+Turquoise	# common word
+UR	# short or numeric
+Undefeated	# common word
+Ungaro	# common word
+Union	# common word
+Unlead	# common word
+Valor	# common word
+Varsity	# common word
+Vedette	# common word
+Velvet	# common word
+Venom	# common word
+Vintage	# common word
+Vista	# common word
+Vocal	# common word
+Wallflower	# common word
+Warrior	# common word
+Weatherproof	# common word
+Weekender	# common word
+Wembley	# data value: wembley
+West End	# reads like a label
+Wigwam	# common word
+Wilt	# common word
+Wolverine	# common word
+Wrangler	# common word
+Wrapper	# common word
+Y&G	# short or numeric
+Zenana	# common word
+Zonal	# common word
+alight	# common word
+ascension	# common word
+dollhouse	# common word
+eyewear	# common word
+icebreaker	# common word
+indigo	# common word
+marshal	# common word
+prAna	# common word

@@ -42,5 +42,9 @@ class ResultStore:
             known = ", ".join(self._results) or "none yet"
             raise ResultNotFound(f"No result '{result_id}'. Known results: {known}.") from None
 
+    def frames(self) -> list[pd.DataFrame]:
+        """Every stored result, for number grounding and the leak scan (D1.16)."""
+        return [r.df for r in self._results.values()]
+
     def __contains__(self, result_id: str) -> bool:
         return result_id in self._results
