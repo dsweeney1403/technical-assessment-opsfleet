@@ -41,6 +41,7 @@ def record(trace_id="7f3a1c2e", attempt=1, outcome="answered", reason="OK"):
             span("gateway", "g1", "t1", 21, {
                 "sql_in": "SELECT SUM(x) FROM sales WHERE country = 'Brasil'",
                 "sql_rewritten": "WITH sales AS (SELECT ...) SELECT SUM(x) FROM sales WHERE country = 'Brasil'",
+                "scoped_tables": ["sales", "customers", "products"], "scope_brands": ["Levi's"],
                 "code": None, "rows": 1, "bytes_billed": 10_485_760, "transient_retries": 0,
                 "diagnosis": None}),
             span("output_check", "o", "root", 30, {"leak_hits": [], "numbers_removed": [], "grounding_retry": False}),
@@ -87,15 +88,17 @@ def test_compact_shows_steps_sql_codes_and_outcome_without_messages():
     out = text_of(viewer.render(record()))
     for expected in ["trace 7f3a1c2e", "question: revenue in Brazil", "classify  analysis", "agent step 1",
                      "gemini-3.6-flash", "220 tokens", "retries 2", "fallback used", "run_sql  ok",
-                     "gateway  1 rows · 10.5 MB", "sql in: SELECT SUM(x)", "sql rewritten: WITH sales AS",
+                     "gateway  1 rows · 10.5 MB", "sql in: SELECT SUM(x)",
+                     "sql rewritten: WITH sales, customers, products (curated, scope: brand IN (Levi's))",
                      "numbers removed: none", "outcome  answered (OK)", "330 tokens", "2.4 s", "1 tool calls"]:
         assert expected in out, expected
-    assert "SYSTEM PROMPT TEXT" not in out and "result:" not in out
+    assert "SYSTEM PROMPT TEXT" not in out and "result:" not in out and "SELECT ..." not in out
 
 
 def test_full_adds_messages_results_and_answer():
     out = text_of(viewer.render(record(), full=True))
     assert "in system: SYSTEM PROMPT TEXT" in out
+    assert "sql rewritten: WITH sales AS (SELECT ...)" in out
     assert 'out: [tool calls] run_sql({"sql": "SELECT 1"})' in out
     assert 'result: {"row_count": 1' in out
     assert "answer: Revenue in Brasil was 100." in out

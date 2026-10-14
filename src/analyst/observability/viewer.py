@@ -1,9 +1,10 @@
 """`python -m analyst trace <id>`: one turn as a tree (D2.20).
 
-Compact by default: steps, codes, SQL before and after the rewrite, rows,
-latency and tokens, which shows where a turn went wrong. `--full` adds the
-complete messages in and out of each LLM call and each tool result, which
-shows why the model did it.
+Compact by default: steps, codes, SQL with the rewrite summarised as the
+tables and brand scope it applied, rows, latency and tokens, which shows where
+a turn went wrong. `--full` adds the complete rewritten SQL, the
+messages in and out of each LLM call and each tool result, which shows why the
+model did it.
 """
 
 from __future__ import annotations
@@ -112,9 +113,15 @@ def _details(span: dict, full: bool) -> list[Text]:
     a, name = span["attributes"], span["name"]
     out = []
     if name == "gateway":
-        out.append(_block("sql in", a.get("sql_in") or ""))
-        if a.get("sql_rewritten"):
+        out.append(_block("sql in", (a.get("sql_in") or "").strip()))
+        if a.get("sql_rewritten") and full:
             out.append(_block("sql rewritten", a["sql_rewritten"], "dim"))
+        elif a.get("sql_rewritten"):
+            brands = a.get("scope_brands")
+            scope = "all brands" if brands is None else f"brand IN ({', '.join(brands)})"
+            tables = ", ".join(a.get("scoped_tables") or ["the curated tables"])
+            out.append(_block("sql rewritten", f"WITH {tables} (curated, scope: {scope}) + sql in; --full shows it all",
+                              "dim"))
         if a.get("diagnosis"):
             out.append(_block("diagnosis", json.dumps(a["diagnosis"], default=str)))
     elif name == "tool_call" and a.get("tool") != "run_sql":

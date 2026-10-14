@@ -254,7 +254,8 @@ class Gateway:
 
         tables, params = scoped_tables(self.curated, user)
         rewritten = wrap_sql(sql, tables)
-        span["sql_rewritten"] = rewritten
+        span.update(sql_rewritten=rewritten, scoped_tables=list(tables),
+                    scope_brands=None if user.all_brands else list(user.brands))
         cap = self.settings.max_bytes_processed
         try:
             dry = self._retrying(lambda: self.client.query(

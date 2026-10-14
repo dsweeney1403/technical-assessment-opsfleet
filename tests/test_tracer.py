@@ -181,6 +181,8 @@ def test_repaired_answer_has_full_span_tree(run):
     assert second["attributes"]["sql_in"] == GOOD_SQL
     assert second["attributes"]["sql_rewritten"].startswith("WITH sales AS (")
     assert second["attributes"]["rows"] == 60 and second["attributes"]["bytes_billed"] == 10_485_760
+    assert second["attributes"]["scope_brands"] is None  # the CEO sees all brands
+    assert second["attributes"]["scoped_tables"] == ["sales", "customers", "products"]
 
     (check,) = spans(record, "output_check")
     assert check["attributes"]["numbers_removed"] == [] and check["attributes"]["leak_hits"] == []

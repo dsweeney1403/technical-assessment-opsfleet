@@ -35,3 +35,18 @@ python -m analyst chat --user ceo --simulate-llm-429
 ```
 
 To see the cost limit fire for real, set `bigquery.max_bytes_processed: 12000000` in `config/settings.yaml` and ask "Break down revenue and margin by brand, category, department, state, age band and traffic source". That query scans about 14 MB and is refused; the agent drops dimensions until the query fits and says what it couldn't include. Leave `maximum_bytes_billed` as it is: BigQuery bills every sales query at least 42 MB.
+
+## Seeing what happened in a turn
+
+Every answer ends with a short grey line such as `trace 7f3a1c2e`. Quote it when something looks wrong. To open that turn:
+
+```bash
+python -m analyst trace 7f3a           # a unique prefix is enough
+python -m analyst trace 7f3a --full    # adds the full rewritten SQL, every model message and each tool result
+```
+
+The tree shows each step: the intent classifier, every agent step with its model call (model, tokens, latency, retries, fallback), every query with its SQL and the brand scope the access rewrite applied, the error code or row count, and the output check. It ends with one outcome (answered, partial, declined or failed) and one reason code, such as `OK`, `STUCK`, `BQ_DOWN` or `NOT_SELECT`.
+
+In the chat, `/stats` shows metrics for the session in two views. The business view covers outcome rates, retries, fallback use, tokens, bytes and p50 and p95 latency. The engineering view covers first-attempt SQL success, repairs, stuck-rule fires, empty results, security events and figures removed by the grounding check.
+
+Traces are JSONL files in `traces/`, one per conversation. They hold what the model saw, never raw BigQuery rows, and they are gitignored.
