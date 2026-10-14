@@ -54,8 +54,40 @@ def test_duplicate_user_ids(tmp_path):
         load_users(_write(tmp_path, "users.yaml", {"users": [u, u]}))
 
 
-def test_missing_env(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+def _clear(monkeypatch):
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_missing_key(tmp_path, monkeypatch):
+    _clear(monkeypatch)
     with pytest.raises(ConfigError, match="GEMINI_API_KEY"):
-        load_env(tmp_path / "missing.env")
+        load_env(tmp_path / "missing.env", adc_project=lambda: "p")
+
+
+def test_google_api_key_alias(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "k2")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    assert load_env(tmp_path / "missing.env").gemini_api_key == "k2"
+
+
+def test_gemini_key_wins_over_alias(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    monkeypatch.setenv("GOOGLE_API_KEY", "k2")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    assert load_env(tmp_path / "missing.env").gemini_api_key == "k1"
+
+
+def test_project_falls_back_to_adc(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    assert load_env(tmp_path / "missing.env", adc_project=lambda: "adc-proj").google_cloud_project == "adc-proj"
+
+
+def test_no_project_anywhere(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    with pytest.raises(ConfigError, match="set-quota-project"):
+        load_env(tmp_path / "missing.env", adc_project=lambda: None)

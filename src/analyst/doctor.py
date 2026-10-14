@@ -29,7 +29,7 @@ def check_env() -> Check:
     try:
         env = load_env()
     except ConfigError as exc:
-        return Check("Environment", False, str(exc), "Copy .env.example to .env and fill in both values.")
+        return Check("Environment", False, str(exc), "Copy .env.example to .env and fill it in.")
     return Check("Environment", True, f"GEMINI_API_KEY set, project {env.google_cloud_project}")
 
 

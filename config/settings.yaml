@@ -1,6 +1,6 @@
 models:
   agent: gemini-3.8-flash
-  agent_fallbacks: [gemini-3.7-flash, gemini-3.5-flash-lite]   # D2.10
+  agent_fallbacks: [gemini-3.6-flash, gemini-3.5-flash-lite]   # D2.10; 3.7-flash now routes to 3.8-flash
   light: gemini-3.5-flash-lite        # classifier, light path, rolling summary, delete reply classifier
   light_fallbacks: [gemini-3.8-flash] # D2.11; fail open to the agent after this
   report: gemini-3.8-flash            # planner and writer; set to gemini-3.1-pro-preview for heavier reports

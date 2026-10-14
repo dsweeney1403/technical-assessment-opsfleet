@@ -143,14 +143,31 @@ class Env(BaseModel):
     google_cloud_project: str
 
 
-def load_env(env_file: Path | None = None) -> Env:
+def _adc_project() -> str | None:
+    """The project attached to Application Default Credentials, if any."""
+    try:
+        import google.auth
+
+        return google.auth.default()[1]
+    except Exception:
+        return None
+
+
+def load_env(env_file: Path | None = None, adc_project=_adc_project) -> Env:
+    """Read credentials settings (D8.3). GOOGLE_API_KEY is accepted as an alias for
+    GEMINI_API_KEY; GOOGLE_CLOUD_PROJECT falls back to the ADC project."""
     load_dotenv(env_file or ROOT / ".env")
-    missing = [k for k in ("GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT") if not os.environ.get(k)]
-    if missing:
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
         raise ConfigError(
-            f"Missing {', '.join(missing)}. Copy .env.example to .env and fill it in."
+            "Missing GEMINI_API_KEY. Get a free key at https://aistudio.google.com/apikey "
+            "and put it in .env (copy .env.example)."
         )
-    return Env(
-        gemini_api_key=os.environ["GEMINI_API_KEY"],
-        google_cloud_project=os.environ["GOOGLE_CLOUD_PROJECT"],
-    )
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT") or adc_project()
+    if not project:
+        raise ConfigError(
+            "No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT in .env, or run "
+            "`gcloud auth application-default set-quota-project <project-id>`. "
+            "A free BigQuery sandbox project works."
+        )
+    return Env(gemini_api_key=key, google_cloud_project=project)
