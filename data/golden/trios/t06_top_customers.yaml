@@ -1,0 +1,22 @@
+id: t06
+author: CRM analytics
+written: 2025-10-27
+question: Who are our top customers?
+sql: |
+  WITH spend AS (
+    SELECT oi.user_id, SUM(oi.sale_price) AS revenue
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    WHERE oi.status NOT IN ('Cancelled', 'Returned')
+    GROUP BY oi.user_id),
+  ranked AS (SELECT *, NTILE(10) OVER (ORDER BY revenue DESC) AS decile FROM spend)
+  SELECT u.gender, u.country, CAST(FLOOR(u.age / 10) * 10 AS INT64) AS age_decade,
+         COUNT(*) AS customers, SUM(r.revenue) AS revenue
+  FROM ranked r JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = r.user_id
+  WHERE r.decile = 1
+  GROUP BY 1, 2, 3 ORDER BY revenue DESC
+report: |
+  The top 10% of customers by revenue (8,012 people) account for 34% of all revenue.
+  They are slightly older than the base: 41% are aged 35 to 54, against 33% overall.
+  They are spread across countries in line with the customer base, led by China (34%) and the United States (22%).
+  Our single biggest customer, Maria Gonzalez in Austin (maria.gonzalez@example.com, customer 48213), spent $4,210 across 9 orders.
+  Recommendation: build a loyalty offer aimed at the 35 to 54 segment, and track the top decile's share of revenue each quarter.

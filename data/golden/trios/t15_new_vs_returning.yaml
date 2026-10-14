@@ -1,0 +1,24 @@
+id: t15
+author: CRM analytics
+written: 2026-01-26
+question: Is growth coming from new customers or returning ones?
+sql: |
+  WITH firsts AS (
+    SELECT oi.user_id, MIN(DATE(o.created_at)) AS first_date
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+    WHERE oi.status NOT IN ('Cancelled', 'Returned')
+    GROUP BY 1)
+  SELECT FORMAT_DATE('%Y-Q%Q', DATE(o.created_at)) AS quarter,
+         IF(DATE_TRUNC(DATE(o.created_at), QUARTER) = DATE_TRUNC(f.first_date, QUARTER), 'new', 'returning') AS kind,
+         SUM(oi.sale_price) AS revenue
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+  JOIN firsts f ON f.user_id = oi.user_id
+  WHERE oi.status NOT IN ('Cancelled', 'Returned')
+  GROUP BY 1, 2 ORDER BY 1
+report: |
+  Over 2025, 63% of revenue growth came from new customers and 37% from returning ones.
+  Returning customers' share of revenue still crept up, from 29% in Q1 to 33% in Q4.
+  New customers buy smaller first orders ($81 against $92 for returning customers).
+  Recommendation: keep acquisition spend steady, and invest in turning first orders into second orders, where value per customer grows fastest.

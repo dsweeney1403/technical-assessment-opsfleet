@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from analyst.config import CircuitBreakerSettings, LLMRetry, Settings
 from analyst.observability import tracer
 
-Role = Literal["agent", "light", "report"]
+Role = Literal["agent", "light", "report", "indexing"]
 T = TypeVar("T")
 S = TypeVar("S", bound=BaseModel)
 
@@ -203,7 +203,8 @@ class LLM:
 
     def chain(self, role: Role) -> list[str]:
         models = self._settings.models
-        fallbacks = models.light_fallbacks if role == "light" else models.agent_fallbacks  # report uses the agent's
+        # report and indexing use the agent's fallbacks
+        fallbacks = models.light_fallbacks if role == "light" else models.agent_fallbacks
         return list(dict.fromkeys([self.model_id(role), *fallbacks]))
 
     def _chat_for(self, model_id: str):

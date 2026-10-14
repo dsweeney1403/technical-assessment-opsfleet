@@ -1,0 +1,20 @@
+id: t03
+author: Brand analytics, Calvin Klein desk
+written: 2026-01-20
+question: How do Calvin Klein jeans compare with Calvin Klein underwear on revenue, margin and returns?
+sql: |
+  SELECT p.category,
+         ROUND(SUM(IF(oi.status NOT IN ('Cancelled', 'Returned'), oi.sale_price, 0)), 2) AS revenue,
+         SAFE_DIVIDE(SUM(IF(oi.status NOT IN ('Cancelled', 'Returned'), oi.sale_price - p.cost, 0)),
+                     SUM(IF(oi.status NOT IN ('Cancelled', 'Returned'), oi.sale_price, 0))) AS margin,
+         SAFE_DIVIDE(COUNTIF(oi.status = 'Returned'), COUNTIF(oi.status != 'Cancelled')) AS return_rate
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+  WHERE p.brand = 'Calvin Klein' AND p.category IN ('Jeans', 'Underwear')
+  GROUP BY p.category
+report: |
+  Calvin Klein jeans bring in 3.4 times the revenue of Calvin Klein underwear ($48,200 against $14,100) over the period.
+  Underwear earns the better margin: 57% against 49% for jeans.
+  Jeans are returned far more often, 13.5% of items against 4.1%, mostly for fit.
+  Net of returns, each jeans sale is still worth about 2.8 times an underwear sale.
+  Recommendation: keep jeans as the revenue driver but tackle fit returns with clearer size guides; use underwear as a high-margin add-on at checkout.

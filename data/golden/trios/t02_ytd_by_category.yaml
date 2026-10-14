@@ -1,0 +1,25 @@
+id: t02
+author: Retail analytics team
+written: 2025-09-15
+question: What is year-to-date revenue by product category, and which categories are growing fastest?
+sql: |
+  WITH ytd AS (
+    SELECT p.category, EXTRACT(YEAR FROM o.created_at) AS yr, SUM(oi.sale_price) AS revenue
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+    JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+    WHERE oi.status NOT IN ('Cancelled', 'Returned')
+      AND EXTRACT(DAYOFYEAR FROM o.created_at) <= EXTRACT(DAYOFYEAR FROM CURRENT_DATE())
+      AND EXTRACT(YEAR FROM o.created_at) IN (EXTRACT(YEAR FROM CURRENT_DATE()), EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
+    GROUP BY 1, 2)
+  SELECT category,
+         SUM(IF(yr = EXTRACT(YEAR FROM CURRENT_DATE()), revenue, 0)) AS ytd_revenue,
+         SAFE_DIVIDE(SUM(IF(yr = EXTRACT(YEAR FROM CURRENT_DATE()), revenue, 0)),
+                     SUM(IF(yr < EXTRACT(YEAR FROM CURRENT_DATE()), revenue, 0))) - 1 AS growth
+  FROM ytd GROUP BY category ORDER BY ytd_revenue DESC
+report: |
+  Year to date, Outerwear & Coats leads with $1.21M (14% of revenue), followed by Jeans at $1.05M and Sweaters at $0.78M.
+  Against the same period last year, the fastest growers are Suits & Sport Coats (+62%) and Active (+48%).
+  Two categories shrank: Socks (-6%) and Leggings (-2%).
+  The top five categories hold 52% of revenue, slightly more concentrated than last year's 49%.
+  Recommendation: protect stock depth in Outerwear & Coats and Jeans going into Q4, and review the Socks range.

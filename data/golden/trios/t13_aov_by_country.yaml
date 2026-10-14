@@ -1,0 +1,18 @@
+id: t13
+author: International analytics
+written: 2025-07-14
+question: How does average order value differ by country?
+sql: |
+  SELECT u.country,
+         COUNT(DISTINCT oi.order_id) AS orders,
+         SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.order_id)) AS avg_order_value,
+         SAFE_DIVIDE(COUNT(*), COUNT(DISTINCT oi.order_id)) AS basket_size
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = oi.user_id
+  WHERE oi.status NOT IN ('Cancelled', 'Returned')
+  GROUP BY 1 HAVING orders >= 100 ORDER BY avg_order_value DESC
+report: |
+  Average order value ranges from $79 in Brasil to $93 in Australia, a 17% spread.
+  Most of the spread comes from basket size (1.42 items in Australia against 1.29 in Brasil), not item price.
+  The United States and China sit close to the overall average of $86.
+  Recommendation: test bundle offers in the lower-basket countries before changing prices.

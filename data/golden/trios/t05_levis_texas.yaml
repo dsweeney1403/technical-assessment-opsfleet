@@ -1,0 +1,18 @@
+id: t05
+author: Brand analytics, denim desk
+written: 2026-03-02
+question: Why are Levi's sales in Texas behind California?
+sql: |
+  SELECT u.state, p.category,
+         COUNT(DISTINCT oi.user_id) AS customers,
+         ROUND(SUM(oi.sale_price), 2) AS revenue
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = oi.user_id
+  JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+  WHERE p.brand = "Levi's" AND oi.status NOT IN ('Cancelled', 'Returned') AND u.state IN ('Texas', 'California')
+  GROUP BY 1, 2
+report: |
+  Levi's revenue in Texas is 42% of California's ($3,100 against $7,400), while Texas has 71% as many Levi's customers.
+  So the gap is mostly spend per customer, not reach.
+  Texas Levi's buyers skew to Jeans only (81% of items); California buyers add Outerwear & Coats and Shorts.
+  Recommendation: cross-sell Levi's outerwear to Texas jeans buyers, starting with the autumn range.

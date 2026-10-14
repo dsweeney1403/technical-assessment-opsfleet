@@ -1,0 +1,18 @@
+id: t10
+author: Marketing analytics
+written: 2025-11-21
+question: Which traffic sources bring our most valuable customers?
+sql: |
+  SELECT u.traffic_source,
+         COUNT(DISTINCT oi.user_id) AS customers,
+         SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.user_id)) AS revenue_per_customer,
+         SAFE_DIVIDE(COUNT(DISTINCT oi.order_id), COUNT(DISTINCT oi.user_id)) AS orders_per_customer
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = oi.user_id
+  WHERE oi.status NOT IN ('Cancelled', 'Returned')
+  GROUP BY 1 ORDER BY revenue_per_customer DESC
+report: |
+  Search brings the most customers (70% of buyers) and solid value at $104 revenue per customer.
+  Email customers are the most valuable at $118 each, buying 1.32 orders on average, but they are only 5% of buyers.
+  Facebook customers are the least valuable at $91 each.
+  Recommendation: grow the email list with a sign-up incentive at checkout, and review Facebook campaign targeting.

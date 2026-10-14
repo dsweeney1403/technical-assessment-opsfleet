@@ -9,6 +9,8 @@ fallback, breaker and gateway code handles it:
 - --simulate-bq-error: every BigQuery query fails with a transient 503 at
   execution (dry runs pass, so it fails mid-turn). Retries run out and the
   agent answers with what it has.
+- --simulate-embedding-down: every embedding call answers 503. Retries run out,
+  the turn gets no trios and the trace logs `trios_unavailable` (D4.8).
 """
 
 from __future__ import annotations
@@ -24,12 +26,14 @@ class Faults:
     llm_429: bool = False
     llm_down: bool = False
     bq_error: bool = False
+    embedding_down: bool = False
 
     @property
     def active(self) -> list[str]:
         return [name for name, on in (("Gemini 429 on the agent's primary model", self.llm_429),
                                       ("every Gemini model down", self.llm_down),
-                                      ("BigQuery errors", self.bq_error)) if on]
+                                      ("BigQuery errors", self.bq_error),
+                                      ("embeddings down", self.embedding_down)) if on]
 
 
 def _rate_limited() -> Exception:
@@ -69,6 +73,21 @@ def chat_factory(factory, faults: Faults, agent_primary: str):
         return factory(model=model, **kwargs)
 
     return make
+
+
+class FailingEmbeddings:
+    """Stands in for the google-genai client: every embedding call answers 503."""
+
+    def __init__(self):
+        self.models = self
+
+    def embed_content(self, **kwargs):
+        raise ServerError(503, {"error": {"code": 503, "message": "Simulated outage (--simulate-embedding-down).",
+                                          "status": "UNAVAILABLE"}})
+
+
+def embedding_client_factory(factory, faults: Faults):
+    return (lambda api_key: FailingEmbeddings()) if faults.embedding_down else factory
 
 
 class FailingBigQuery:

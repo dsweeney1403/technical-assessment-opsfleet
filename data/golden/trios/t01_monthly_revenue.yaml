@@ -1,0 +1,20 @@
+id: t01
+author: Retail analytics team
+written: 2026-02-03
+question: How has monthly revenue trended over the last year?
+sql: |
+  SELECT FORMAT_DATE('%Y-%m', DATE(o.created_at)) AS month,
+         ROUND(SUM(oi.sale_price), 2) AS revenue,
+         COUNT(DISTINCT o.order_id) AS orders
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+  WHERE oi.status NOT IN ('Cancelled', 'Returned')
+    AND DATE(o.created_at) >= DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 12 MONTH)
+  GROUP BY month
+  ORDER BY month
+report: |
+  Revenue grew in 11 of the last 12 months, from $412,300 in February 2025 to $968,700 in January 2026, a 135% rise.
+  Growth came from order volume, not price: orders rose 128% while average order value moved only from $84.10 to $86.90.
+  The one dip was April 2025 (down 3.2% on March), which lines up with the end of the spring promotion.
+  November and December were the two strongest months, together 21% of the year's revenue.
+  Recommendation: plan inventory for continued volume growth rather than price-led growth, and repeat the spring promotion with a softer end date.

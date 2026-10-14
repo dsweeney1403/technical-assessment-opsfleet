@@ -1,0 +1,20 @@
+id: t04
+author: Retail analytics team
+written: 2025-12-08
+question: Why is spend per customer in Texas lower than in California?
+sql: |
+  SELECT u.state,
+         COUNT(DISTINCT oi.user_id) AS customers,
+         SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.user_id)) AS spend_per_customer,
+         SAFE_DIVIDE(COUNT(DISTINCT oi.order_id), COUNT(DISTINCT oi.user_id)) AS orders_per_customer,
+         SAFE_DIVIDE(SUM(oi.sale_price), COUNT(DISTINCT oi.order_id)) AS avg_order_value
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = oi.user_id
+  WHERE oi.status NOT IN ('Cancelled', 'Returned') AND u.state IN ('Texas', 'California')
+  GROUP BY u.state
+report: |
+  Spend per customer in Texas was 11% lower than in California ($96.40 against $108.30).
+  The gap is not about how often people buy: orders per customer are almost the same (1.21 against 1.23).
+  It is about what they buy. Average order value in Texas is 9% lower, because a higher share of Texas orders are in lower-price categories such as Socks, Tops & Tees and Accessories (38% of items against 31%).
+  Traffic source plays a smaller part: Texas has more customers arriving from Facebook, who spend less per order everywhere.
+  Recommendation: test outerwear and denim bundles in Texas to lift order value, rather than chasing order frequency.

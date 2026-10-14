@@ -1,0 +1,23 @@
+id: t07
+author: CRM analytics
+written: 2026-01-12
+question: How many customers churned last quarter, and who are they?
+sql: |
+  WITH last_order AS (
+    SELECT oi.user_id, MAX(DATE(o.created_at)) AS last_date
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+    WHERE oi.status NOT IN ('Cancelled', 'Returned')
+    GROUP BY oi.user_id)
+  SELECT u.age >= 45 AS older, u.traffic_source,
+         COUNTIF(DATE_DIFF(DATE '2025-12-31', l.last_date, DAY) > 90) AS churned,
+         COUNT(*) AS customers
+  FROM last_order l JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = l.user_id
+  WHERE l.last_date <= DATE '2025-12-31'
+  GROUP BY 1, 2
+report: |
+  By the end of Q4 2025, 61% of customers who had ever bought had not ordered in the last 90 days, up from 58% at the end of Q3.
+  Churn is highest among customers who came from Facebook (66%) and lowest for Search (57%).
+  Customers aged 45 and over churn slightly less (59% against 62%).
+  Most churned customers made exactly one order: a second order cuts the chance of churning by about half.
+  Recommendation: target one-order customers with a second-purchase offer within 60 days of their first order.

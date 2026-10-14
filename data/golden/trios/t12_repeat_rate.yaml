@@ -1,0 +1,19 @@
+id: t12
+author: CRM analytics
+written: 2026-03-30
+question: What is our repeat purchase rate, and how does it vary by age group?
+sql: |
+  WITH orders_per_customer AS (
+    SELECT oi.user_id, COUNT(DISTINCT oi.order_id) AS orders
+    FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+    WHERE oi.status NOT IN ('Cancelled', 'Returned')
+    GROUP BY 1)
+  SELECT CAST(FLOOR(u.age / 10) * 10 AS INT64) AS age_decade,
+         SAFE_DIVIDE(COUNTIF(c.orders >= 2), COUNT(*)) AS repeat_rate
+  FROM orders_per_customer c JOIN `bigquery-public-data.thelook_ecommerce.users` u ON u.id = c.user_id
+  GROUP BY 1 ORDER BY 1
+report: |
+  18% of customers who bought in the period bought more than once.
+  The repeat rate rises with age, from 14% for customers under 25 to 22% for those aged 55 and over.
+  Repeat customers spend 2.3 times as much as one-time buyers over the period.
+  Recommendation: aim second-order offers at younger customers, where the repeat gap is widest.

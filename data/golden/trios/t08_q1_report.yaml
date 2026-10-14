@@ -1,0 +1,23 @@
+id: t08
+author: Retail analytics team
+written: 2025-04-09
+question: Create a Q1 report with action items for Q2.
+sql: |
+  SELECT p.category, p.department,
+         SUM(IF(oi.status NOT IN ('Cancelled', 'Returned'), oi.sale_price, 0)) AS revenue,
+         COUNTIF(oi.status = 'Returned') AS returned_items,
+         COUNT(DISTINCT oi.user_id) AS customers
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+  JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+  WHERE DATE(o.created_at) BETWEEN '2025-01-01' AND '2025-03-31'
+  GROUP BY 1, 2
+report: |
+  Q1 2025 summary. Revenue was $2.61M, up 38% on Q1 2024, from 31,400 orders.
+  Findings: Women's revenue grew faster than Men's (+44% against +32%). Outerwear & Coats led all categories at $402,000.
+  Returns ran at 9.8% of items, with Jeans the highest at 13%.
+  New customers made up 47% of buyers, and their average order value was 6% below returning customers.
+  Action items for Q2: (1) Lift returning-customer share with a second-order offer, based on the gap in order value.
+  (2) Cut Jeans returns with better fit guidance, target 11% in line with the store average.
+  (3) Shift spring marketing toward Women's categories, where growth is strongest.
+  Next questions: which traffic sources bring the new customers who return, and whether Q2 promotions change the return rate.

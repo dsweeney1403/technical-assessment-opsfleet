@@ -33,6 +33,22 @@ class BrandMatcher:
     def __init__(self, all_brands: list[str]):
         self.all_brands = sorted(set(all_brands))
 
+    def canonical(self, name: str) -> str | None:
+        """The catalogue's spelling of a brand name, or None if nothing is close (D4.4): "Levis" -> "Levi's"."""
+        if name in self.all_brands:
+            return name
+        if not hasattr(self, "_by_norm"):
+            self._by_norm: dict[str, str] = {}
+            for b in self.all_brands:
+                self._by_norm.setdefault(normalise(b), b)
+        key = normalise(name)
+        if not key:
+            return None
+        if key in self._by_norm:
+            return self._by_norm[key]
+        close = difflib.get_close_matches(key, list(self._by_norm), n=1, cutoff=CUTOFF)
+        return self._by_norm[close[0]] if close else None
+
     def candidates(self, user: User) -> list[str]:
         return self.all_brands if user.all_brands else list(user.brands)
 

@@ -1,0 +1,19 @@
+id: t09
+author: Merchandising analytics
+written: 2026-02-17
+question: Why are returns rising in Outerwear & Coats?
+sql: |
+  SELECT FORMAT_DATE('%Y-%m', DATE(o.created_at)) AS month, p.department,
+         SAFE_DIVIDE(COUNTIF(oi.status = 'Returned'), COUNTIF(oi.status != 'Cancelled')) AS return_rate,
+         AVG(oi.sale_price) AS avg_price
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+  JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+  WHERE p.category = 'Outerwear & Coats'
+  GROUP BY 1, 2 ORDER BY 1
+report: |
+  The Outerwear & Coats return rate rose from 9.1% to 12.6% over six months.
+  The rise is concentrated in items priced above $300, whose return rate went from 11% to 19%; cheaper items barely moved.
+  Women's outerwear accounts for most of the increase.
+  Returns cluster in the first 10 days after delivery, which points to fit or expectation rather than quality.
+  Recommendation: add size and fit detail to premium outerwear pages and review product photos for the top 20 returned styles.

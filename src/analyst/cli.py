@@ -340,6 +340,46 @@ def chat(
             trace_line(session)
 
 
+golden_app = typer.Typer(no_args_is_help=True, help="Golden Bucket: index the seeded trios, calibrate the threshold.")
+app.add_typer(golden_app, name="golden")
+
+
+@golden_app.command("index")
+def golden_index(debug: bool = typer.Option(False, "--debug", help="Show tracebacks for unexpected errors")) -> None:
+    """Strip, tag, describe and embed every trio in data/golden/trios/ (D4.3, D4.4, D4.7, D4.11).
+    The index is committed, so reviewers don't need to run this (D8.3)."""
+    from google.cloud import bigquery
+
+    from analyst.config import ROOT, resolve
+    from analyst.golden.index import build_index, load_trios, write_index
+    from analyst.llm.client import LLM
+    from analyst.llm.embeddings import Embedder
+    from analyst.sql.brands import BrandMatcher
+    from analyst.sql.gateway import load_brands
+
+    done = False
+    with friendly_errors(debug):
+        settings, env = load_settings(), load_env()
+        brands = BrandMatcher(load_brands(bigquery.Client(project=env.google_cloud_project), settings.bigquery.dataset))
+        trios = load_trios(resolve(settings.golden.trios_dir))
+        with console.status(f"Indexing {len(trios)} trios..."):
+            index, dropped = build_index(trios, ROOT, LLM(settings, env.gemini_api_key),
+                                         Embedder(settings, env.gemini_api_key), brands)
+        write_index(index, resolve(settings.golden.index))
+        table = Table(show_header=True, header_style="bold")
+        for col in ("Trio", "Brands", "Description", "Dropped"):
+            table.add_column(col)
+        for t in index.trios:
+            table.add_row(t.trio_id, ", ".join(t.brands) or "(company-wide)", t.description,
+                          ", ".join(dropped.get(t.trio_id, [])))
+        console.print(table)
+        console.print(f"Wrote {len(index.trios)} trios to {settings.golden.index} "
+                      f"({index.model}, {index.dimensions} dimensions).", markup=False)
+        done = True
+    if not done:
+        raise typer.Exit(1)
+
+
 @app.command("trace")
 def trace_cmd(
     trace_id: str = typer.Argument(..., help="Trace id shown under an answer; a unique prefix is enough"),

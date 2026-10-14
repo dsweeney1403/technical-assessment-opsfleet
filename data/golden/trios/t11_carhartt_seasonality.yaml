@@ -1,0 +1,17 @@
+id: t11
+author: Brand analytics, workwear desk
+written: 2025-08-29
+question: How seasonal are Carhartt sales, and when should we stock up?
+sql: |
+  SELECT EXTRACT(MONTH FROM o.created_at) AS month_number, p.category,
+         ROUND(SUM(oi.sale_price), 2) AS revenue
+  FROM `bigquery-public-data.thelook_ecommerce.order_items` oi
+  JOIN `bigquery-public-data.thelook_ecommerce.orders` o USING (order_id)
+  JOIN `bigquery-public-data.thelook_ecommerce.products` p ON p.id = oi.product_id
+  WHERE p.brand = 'Carhartt' AND oi.status NOT IN ('Cancelled', 'Returned')
+  GROUP BY 1, 2
+report: |
+  Carhartt is strongly seasonal: October to January brings 49% of its yearly revenue, against 33% for the store overall.
+  The peak is driven by Outerwear & Coats, which is 4 times its summer level in December.
+  Carhartt Pants and Shorts are flat across the year.
+  Recommendation: build Carhartt outerwear stock from September and keep pants on a steady replenishment cycle.
