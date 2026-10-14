@@ -3,6 +3,7 @@
 from datetime import date
 
 import numpy as np
+import pytest
 from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from test_graph import BRANDS, CEO, FakeGateway, FakeLLM, sql_call
@@ -186,3 +187,42 @@ def test_report_retrieves_once_and_sections_get_no_examples(tmp_path):
     assert all("Question levis_texas?" in t for t in planner_inputs + writer_inputs)  # the redo reuses them
     assert seen_sections and all("Worked examples" not in s for s in seen_sections)
     assert graph.get_state(cfg).values["report"].trios[0].trio_id == "levis_texas"
+
+
+# Threshold calibration (D4.9)
+
+
+def test_suggestion_is_mid_gap_or_just_above_the_best_wrong_pair():
+    from analyst.golden.calibrate import suggest
+
+    assert suggest([0.8, 0.9], [0.5, 0.6]) == (0.7, False)
+    value, overlap = suggest([0.66, 0.9], [0.5, 0.738])
+    assert overlap and 0.738 < value <= 0.74
+
+
+def test_calibration_groups_pairs_and_leaves_related_trios_out():
+    from analyst.golden.calibrate import LabelledMatch, LabelledSet, calibrate, sweep
+
+    labelled = LabelledSet(matches=[LabelledMatch(trio="company_texas", questions=["texas?"], related=["levis_texas"])],
+                           none=["deliveries?"])
+    vectors = {"texas?": [0.9, 0.43589, 0.0], "deliveries?": [0.0, 0.0, 1.0]}
+    cal = calibrate(labelled, STORE, lambda texts: np.array([vectors[t] for t in texts], dtype=np.float32))
+    assert [p.trio_id for p in cal.correct] == ["company_texas"] and cal.correct[0].score == pytest.approx(1.0, abs=1e-4)
+    assert [p.trio_id for p in cal.related] == ["levis_texas"]
+    assert len(cal.other) == 3 + 5  # the texas question's other trios, plus every trio for the none question
+    assert cal.recall(cal.suggested) == 1.0 and cal.wrong_above(cal.suggested) == 0
+    assert sweep(cal)[-1][0] == round(cal.suggested, 3)
+
+
+def test_labelled_set_covers_every_trio_and_names_real_ones():
+    from analyst.config import resolve
+    from analyst.golden.calibrate import load_labelled_set
+    from analyst.golden.index import read_index
+
+    settings = load_settings()
+    labelled = load_labelled_set(resolve(settings.golden.trios_dir).parent / "labelled_set.yaml")
+    trio_ids = {t.trio_id for t in read_index(resolve(settings.golden.index)).trios}
+    assert {m.trio for m in labelled.matches} == trio_ids
+    assert all(2 <= len(m.questions) <= 3 and set(m.related) <= trio_ids for m in labelled.matches)
+    assert len(labelled.none) >= 10
+    assert settings.golden.threshold is not None

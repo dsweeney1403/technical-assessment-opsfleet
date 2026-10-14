@@ -21,7 +21,7 @@ class VectorStore:
         self.trios = index.trios
         matrix = np.asarray([t.embedding for t in index.trios], dtype=np.float32).reshape(len(index.trios), -1)
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-        self._matrix = matrix / np.where(norms == 0, 1, norms)
+        self.matrix = matrix / np.where(norms == 0, 1, norms)
 
     @classmethod
     def load(cls, path: Path) -> VectorStore:
@@ -31,6 +31,6 @@ class VectorStore:
         """The n most similar trios, best first, with cosine similarity."""
         if not self.trios:
             return []
-        scores = self._matrix @ np.asarray(vector, dtype=np.float32)
+        scores = self.matrix @ np.asarray(vector, dtype=np.float32)
         order = np.argsort(-scores)[:n]
         return [(self.trios[i], float(scores[i])) for i in order]

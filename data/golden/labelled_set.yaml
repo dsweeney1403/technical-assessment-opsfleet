@@ -1,0 +1,88 @@
+# Labelled set for the trio similarity threshold (D4.9). Also a retrieval regression set (Group 5).
+# matches: executive-style rephrasings that should retrieve the trio.
+# related: other trios that are also a fair match for these questions. They are left out of
+#          both score groups, so a near-duplicate topic doesn't count as a wrong match.
+# none: analysis questions that no seeded trio answers.
+matches:
+  - trio: t01
+    questions:
+      - Show me how sales have moved month by month this past year.
+      - Is revenue growing every month?
+      - Give me the monthly revenue trend.
+  - trio: t02
+    questions:
+      - Which categories are driving sales so far this year?
+      - How is each product category doing year to date against last year?
+      - What are our fastest growing categories this year?
+  - trio: t03
+    related: [t14]
+    questions:
+      - Compare Calvin Klein jeans and underwear for me.
+      - Are Calvin Klein jeans or underwear the better business?
+  - trio: t04
+    related: [t05]
+    questions:
+      - Why are Texas customers spending less than Californians?
+      - Why is Texas underspending?
+      - What explains the gap in spend per customer between Texas and California?
+  - trio: t05
+    related: [t04]
+    questions:
+      - Why is Levi's doing worse in Texas than in California?
+      - Levi's Texas sales look weak against California. Why?
+  - trio: t06
+    questions:
+      - Who are our best customers?
+      - Tell me about our highest spending customers.
+      - What does our top customer segment look like?
+  - trio: t07
+    questions:
+      - How many customers have we lost recently?
+      - What is our churn rate and where is it worst?
+      - Which customers stopped buying from us last quarter?
+  - trio: t08
+    questions:
+      - Put together a first quarter review with recommendations for next quarter.
+      - I need a Q1 summary report with next steps for Q2.
+  - trio: t09
+    questions:
+      - Why are so many coats being returned?
+      - What is behind the increase in outerwear returns?
+  - trio: t10
+    questions:
+      - Which marketing channels bring in the best customers?
+      - Is Facebook or search giving us more valuable customers?
+      - Compare customer value by acquisition channel.
+  - trio: t11
+    questions:
+      - When does Carhartt sell best during the year?
+      - How should we time Carhartt stock for the winter peak?
+  - trio: t12
+    questions:
+      - How many customers come back for a second purchase?
+      - Do older customers buy again more often than younger ones?
+      - What is our repeat purchase rate?
+  - trio: t13
+    questions:
+      - Which countries have the biggest orders?
+      - How does basket value compare across markets?
+  - trio: t14
+    related: [t03]
+    questions:
+      - Where is Calvin Klein making the most and least margin?
+      - Which Calvin Klein product lines are least profitable?
+  - trio: t15
+    questions:
+      - Are we growing because of new customers or loyal ones?
+      - How much of our growth comes from first-time buyers?
+none:
+  - What share of revenue comes from the Women's department?
+  - How many products have never sold?
+  - What is the average delivery time from order to delivery?
+  - Which cities in Germany have the most customers?
+  - How many orders were placed on weekends last month?
+  - What is the gender split of customers who signed up this year?
+  - Which brands have the most products in the catalogue?
+  - How long does it usually take to ship an order?
+  - What percentage of orders contain more than one brand?
+  - How many customers signed up but never ordered?

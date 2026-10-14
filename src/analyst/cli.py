@@ -393,6 +393,58 @@ def golden_index(debug: bool = typer.Option(False, "--debug", help="Show traceba
         raise typer.Exit(1)
 
 
+@golden_app.command("calibrate")
+def golden_calibrate(
+    out: str = typer.Option("", "--out", help="Also write the result as markdown, e.g. docs/golden-calibration.md"),
+    debug: bool = typer.Option(False, "--debug", help="Show tracebacks for unexpected errors"),
+) -> None:
+    """Score the labelled set against every trio and suggest a threshold (D4.9). Set it in settings.yaml by hand."""
+    from pathlib import Path
+
+    from analyst.config import resolve
+    from analyst.golden.calibrate import calibrate, load_labelled_set, markdown, summary, sweep
+    from analyst.golden.vector_store import VectorStore
+    from analyst.llm.embeddings import Embedder
+
+    done = False
+    with friendly_errors(debug):
+        settings, env = load_settings(), load_env()
+        store = VectorStore.load(resolve(settings.golden.index))
+        labelled = load_labelled_set(resolve(settings.golden.trios_dir).parent / "labelled_set.yaml")
+        embedder = Embedder(settings, env.gemini_api_key)
+        with console.status("Embedding the labelled questions..."):
+            cal = calibrate(labelled, store, lambda texts: embedder.embed(texts, "query"))
+        table = Table(show_header=True, header_style="bold")
+        for col in ("Group", "Pairs", "Min", "P5", "Median", "P95", "Max"):
+            table.add_column(col)
+        for name, pairs in (("Correct pairs", cal.correct), ("Everything else", cal.other),
+                            ("Related (excluded)", cal.related)):
+            if pairs:
+                s = summary([p.score for p in pairs])
+                table.add_row(name, str(s["pairs"]), *(f"{s[k]:.3f}" for k in ("min", "p5", "median", "p95", "max")))
+        console.print(table)
+        swept = Table(show_header=True, header_style="bold")
+        for col in ("Threshold", "Correct pairs passing", "Wrong pairs passing"):
+            swept.add_column(col)
+        for t, r, w in sweep(cal):
+            swept.add_row(f"{t:.3f}", f"{r:.0%}", str(w))
+        console.print(swept)
+        where = "just above the best wrong pair (groups overlap)" if cal.overlap else "in the middle of the gap"
+        console.print(f"Suggested threshold: {cal.suggested:.3f}, {where}. At that value "
+                      f"{cal.recall(cal.suggested):.0%} of correct pairs pass and "
+                      f"{cal.wrong_above(cal.suggested)} wrong pairs do.", markup=False)
+        console.print(f"Current setting: golden.threshold = {settings.golden.threshold}. "
+                      "Write the chosen value to config/settings.yaml.", markup=False)
+        if out:
+            path = Path(out)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(markdown(cal, store.model, store.dimensions))
+            console.print(f"Wrote {path}.", markup=False)
+        done = True
+    if not done:
+        raise typer.Exit(1)
+
+
 @app.command("trace")
 def trace_cmd(
     trace_id: str = typer.Argument(..., help="Trace id shown under an answer; a unique prefix is enough"),

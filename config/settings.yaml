@@ -70,7 +70,7 @@ golden:                               # Group 4
   index: data/golden/index.json       # prebuilt and committed, stripped text and vectors only (D8.3)
   glossary: config/glossary.json      # D4.2
   k: 3                                # D4.9
-  threshold: null                     # set from `golden calibrate`, leaning high (D4.9)
+  threshold: 0.71                     # Daniel 2026-10-14 from `golden calibrate`: 92% of correct pairs, 6 wrong of 659 (D4.9)
   overfetch: 20                       # brand filter runs in code on the top 20 (D4.6)
 
 profile:                              # Group 4
