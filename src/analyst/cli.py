@@ -33,6 +33,7 @@ Commands:
   /whoami   show who you are signed in as and which brands you can see
   /retry    pick up a question that stopped because Gemini was unavailable
   /stats    session metrics: business view and engineering view
+  /persona  show which persona version is active
   /reports  list your saved reports
   /download <number>  save a copy of a report from /reports to the reports/ folder
   /exit     leave the chat"""
@@ -217,6 +218,16 @@ def download_numbered(session: Session, arg: str) -> None:
     console.print(f"Saved a copy to {path}. A downloaded copy is outside the app's access controls.", markup=False)
 
 
+def persona_line() -> str:
+    from analyst.persona import load_persona
+
+    p = load_persona(load_settings().persona.dir)
+    if p.fallback_from is None:
+        return f"Persona {p.version} is active."
+    using = f"using {p.version}" if p.version != "none" else "using no persona"
+    return f"Persona {p.fallback_from} can't be loaded ({p.error}), so the chat is {using}."
+
+
 def trace_line(session: Session) -> None:
     """The turn's trace id in grey, under every answer and failure, so it can be quoted (D2.19)."""
     if session.tracer.last:
@@ -275,6 +286,8 @@ def chat(
             console.print(whoami(session.user), markup=False)
         elif text == "/stats":
             show_stats(session)
+        elif text == "/persona":
+            console.print(persona_line(), markup=False)
         elif text == "/reports":
             show_reports(session)
         elif text.startswith("/download"):

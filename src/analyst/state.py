@@ -170,6 +170,15 @@ class PendingDelete(BaseModel):
     replies: list[str] = Field(default_factory=list)
 
 
+class PersonaInUse(BaseModel):
+    """The persona version this turn used (D4.22, D4.23). Re-read every turn."""
+
+    version: str
+    text: str = ""
+    fallback_from: str | None = None  # the active version that couldn't be loaded
+    error: str | None = None
+
+
 class AgentState(TypedDict, total=False):
     user: User  # injected by code from --user, never chosen by the model
     user_input: str
@@ -197,3 +206,4 @@ class AgentState(TypedDict, total=False):
     write_feedback: str | None  # figures the writer must drop or source, one retry (D1.16)
     opened_report: str | None  # report_id opened this turn, shown as saved (D3.16)
     pending_delete: PendingDelete | None
+    persona: PersonaInUse | None

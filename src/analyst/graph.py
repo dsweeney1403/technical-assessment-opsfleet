@@ -35,6 +35,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from analyst import memory, prompts
+from analyst.persona import load_persona
 from analyst.config import AnalysisDefaults, Glossary, Settings, User, load_analysis_defaults, load_glossary
 from analyst.llm.client import LLM, CallStats, LLMError, LLMOutputError
 from analyst.reports import delete as deletion
@@ -55,6 +56,7 @@ from analyst.state import (
     Intent,
     Outline,
     PendingDelete,
+    PersonaInUse,
     ReportDraft,
     SectionResult,
     SecurityEvent,
@@ -76,7 +78,7 @@ CHECKPOINT_TYPES = [
     ("analyst.config", "User"),
     *[("analyst.state", name) for name in (
         "Record", "Intent", "Classified", "Budget", "Draft", "SecurityEvent", "Section", "Outline", "SectionResult",
-        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete")],
+        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete", "PersonaInUse")],
 ]
 BUDGET_SPENT = (
     "The tool budget for this turn is used up. Answer now with the results you have, "
@@ -113,6 +115,7 @@ class Deps:
     mentions: MentionScanner | None = None
     glossary: Glossary | None = field(default_factory=load_glossary)  # D4.2
     defaults: AnalysisDefaults | None = field(default_factory=load_analysis_defaults)  # D4.15
+    persona_dir: Path | None = None  # settings.persona.dir when not given
 
 
 def _charge(budget: Budget, stats: CallStats) -> Budget:
@@ -183,6 +186,7 @@ def build_graph(deps: Deps, checkpointer=None):
     scanner = oc.LeakScanner(deps.brands.all_brands)
     reports = deps.reports or SQLiteReportStore(":memory:")
     mentions = deps.mentions or MentionScanner(deps.brands.all_brands, deps.known)
+    persona_dir = deps.persona_dir or deps.settings.persona.dir
 
     def is_report_turn(state: AgentState) -> bool:
         classified = state.get("classified")
@@ -201,7 +205,9 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def layers_for(state: AgentState) -> prompts.Layers:
         """The prompt layers for this turn (D4.24)."""
-        return prompts.Layers(glossary=deps.glossary, defaults=deps.defaults)
+        persona = state.get("persona")
+        return prompts.Layers(glossary=deps.glossary, defaults=deps.defaults,
+                              persona=persona.text if persona else "", persona_version=persona.version if persona else "")
 
     def chat_messages(state: AgentState) -> list[BaseMessage]:
         classified = state["classified"]
@@ -314,7 +320,9 @@ def build_graph(deps: Deps, checkpointer=None):
     # Chat nodes
 
     def load_context(state: AgentState) -> dict:
+        p = load_persona(persona_dir)  # every turn, so an edit applies to the next answer (D4.22)
         return {
+            "persona": PersonaInUse(version=p.version, text=p.text, fallback_from=p.fallback_from, error=p.error),
             "trace_id": uuid.uuid4().hex[:8],
             "continues": None,
             "messages": state.get("messages", []),

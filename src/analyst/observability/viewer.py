@@ -165,6 +165,11 @@ def render(record: dict, full: bool = False) -> Tree:
     header = Text(f"trace {record['trace_id']}", style="bold")
     header.append(f"  attempt {record['attempt']} · {user.get('id')} ({user.get('role')}) · {record['started_at']}"
                   f" · conversation {record['conversation_id']}", style="dim")
+    persona = record.get("persona")
+    if persona:
+        header.append(f" · persona {persona['version']}", style="dim")
+        if persona.get("fallback_from"):
+            header.append(f" (fallback: {persona['fallback_from']} failed, {persona.get('error')})", style="yellow")
     lines = [header, _block("question", record.get("user_input") or "")]
     if record.get("continues"):
         lines.append(_block("continues", f"trace {record['continues']}"))

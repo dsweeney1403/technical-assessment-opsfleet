@@ -390,6 +390,7 @@ class Tracer:
             "breaker_opens": sum(s.attributes.get("breaker_opens", 0) for s in llm),
         }
         draft = state.get("draft")
+        persona = state.get("persona")
         root = Span("turn", handler.root_id, None, started_ns, end,
                     {"outcome": outcome, "reason": reason, "totals": totals},
                     "error" if outcome == "failed" else "ok")
@@ -404,6 +405,8 @@ class Tracer:
             "models": {"agent": [models.agent, *models.agent_fallbacks],
                        "light": [models.light, *models.light_fallbacks]},
             "user_input": user_input if user_input is not None else state.get("user_input", ""),
+            "persona": ({"version": persona.version, "fallback_from": persona.fallback_from, "error": persona.error}
+                        if persona is not None else None),
             "outcome": outcome,
             "reason": reason,
             "error": f"{type(error).__name__}: {error}" if error is not None else None,
