@@ -194,6 +194,8 @@ def build_graph(deps: Deps, checkpointer=None):
     profiles = deps.profiles or SQLiteProfileStore(":memory:")
     infer_after = deps.settings.profile.inferred_preference_after
     retriever = deps.retriever or retrieval.Retriever(None, None, deps.settings.golden)
+    # Definitions are a trusted source of non-data numbers ("90 days"), so grounding accepts them (D1.16, D4.2).
+    definitions = [prompts.glossary_block(deps.glossary), prompts.defaults_block(deps.defaults)]
 
     def is_report_turn(state: AgentState) -> bool:
         classified = state.get("classified")
@@ -677,7 +679,7 @@ def build_graph(deps: Deps, checkpointer=None):
                     "security_events": [*state["security_events"], event]}
         if draft.source == "code":
             return {}
-        missing = [f for f in oc.ungrounded(draft.text, oc.ground_values(frames, user_texts))
+        missing = [f for f in oc.ungrounded(draft.text, oc.ground_values(frames, [*user_texts, *definitions]))
                    if not _exempt(f, draft.text, draft.exempt)]
         if not missing:
             return {}

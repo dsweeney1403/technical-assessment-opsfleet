@@ -89,3 +89,18 @@ def test_analysis_turn_gets_glossary_and_defaults(setup):
     make(llm)("How are we doing?")
     system = llm.agent_messages[0][0].content
     assert "Glossary (company definitions" in system and "Period: year to date (system default)" in system
+
+
+def test_glossary_numbers_are_not_stripped_by_grounding(setup):
+    """A definition answer quotes the glossary ("90 days"); that number has no query result behind it."""
+    make, _, _ = setup
+    llm = FakeLLM(["data_question"], light_reply="A customer has churned after more than 90 days without a counted order.")
+    out = make(llm)("What do we mean by churn?")
+    assert out["removed_numbers"] == [] and "90 days" in out["draft"].text
+
+
+def test_agent_prompt_keeps_answers_to_the_question_and_bans_em_dashes():
+    text = prompts.agent_system(CEO, TODAY, "(none)", "", layers=full_layers(examples="Q: x"))
+    assert "Answer the question asked." in text and "an approach, not a scope" in text
+    assert "Never use em dashes. Write n/a for a missing value in a table." in text
+    assert "never use em dashes" in prompts.light_system(CEO, TODAY, "")
