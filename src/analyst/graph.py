@@ -24,7 +24,7 @@ import re
 import shutil
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -35,7 +35,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from analyst import memory, prompts
-from analyst.config import Settings, User
+from analyst.config import AnalysisDefaults, Glossary, Settings, User, load_analysis_defaults, load_glossary
 from analyst.llm.client import LLM, CallStats, LLMError, LLMOutputError
 from analyst.reports import delete as deletion
 from analyst.reports import flow
@@ -111,6 +111,8 @@ class Deps:
     known: KnownValues | None = None  # loaded once per session (D2.5)
     reports: ReportStore | None = None  # in-memory SQLite when not given (tests)
     mentions: MentionScanner | None = None
+    glossary: Glossary | None = field(default_factory=load_glossary)  # D4.2
+    defaults: AnalysisDefaults | None = field(default_factory=load_analysis_defaults)  # D4.15
 
 
 def _charge(budget: Budget, stats: CallStats) -> Budget:
@@ -197,11 +199,16 @@ def build_graph(deps: Deps, checkpointer=None):
             tools.update(make_report_tools(reports, user))  # read-only tools plus propose_delete (D3.26)
         return tools
 
+    def layers_for(state: AgentState) -> prompts.Layers:
+        """The prompt layers for this turn (D4.24)."""
+        return prompts.Layers(glossary=deps.glossary, defaults=deps.defaults)
+
     def chat_messages(state: AgentState) -> list[BaseMessage]:
         classified = state["classified"]
         system = prompts.agent_system(
             state["user"], deps.today(), memory.records_block(state["records"]), state["summary"],
             classified.out_of_scope_brands if classified else [], deps.known, report_tools=is_report_turn(state),
+            layers=layers_for(state),
         )
         return [SystemMessage(system), *state["messages"], HumanMessage(state["user_input"])]
 
@@ -378,7 +385,10 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def light_reply(state: AgentState) -> dict:
         stats = CallStats()
-        system = prompts.light_system(state["user"], deps.today(), state["summary"], deps.known)
+        layers = layers_for(state)
+        if state["classified"].intent != Intent.data_question:
+            layers = replace(layers, glossary=None)  # the glossary is for analysis and data questions (D4.2)
+        system = prompts.light_system(state["user"], deps.today(), state["summary"], deps.known, layers)
         msg = deps.llm.invoke(
             "light", [SystemMessage(system), *state["messages"], HumanMessage(state["user_input"])], stats=stats
         )
@@ -396,7 +406,8 @@ def build_graph(deps: Deps, checkpointer=None):
         stats = CallStats()
         messages = flow.plan_messages(
             state["user"], deps.today(), state["user_input"], state["messages"], state["summary"],
-            memory.records_block(state["records"]), max_sections, deps.known, previous, state["outline_feedback"])
+            memory.records_block(state["records"]), max_sections, deps.known, previous, state["outline_feedback"],
+            layers_for(state))
         try:
             outline = deps.llm.structured("report", Outline, messages, stats)
         except LLMOutputError:
@@ -441,7 +452,7 @@ def build_graph(deps: Deps, checkpointer=None):
             "security_events": state["security_events"], "draft": Draft(),
             "budget": Budget(bq_down=state["budget"].bq_down),
             "task_messages": flow.section_messages(state["user"], deps.today(), memory.records_block(state["records"]),
-                                                   deps.known, s),
+                                                   deps.known, s, layers_for(state)),
         }
         out = section_loop.invoke(start)
         update: dict = {"budget": _merge_section(state["budget"], out["budget"]),
@@ -466,7 +477,7 @@ def build_graph(deps: Deps, checkpointer=None):
         outline, sections, previous = state["outline"], state["sections_done"], state.get("redo_of")
         stats = CallStats()
         messages = flow.write_messages(state["user"], deps.today(), state["user_input"], outline, sections,
-                                       deps.store, previous, state.get("write_feedback"))
+                                       deps.store, previous, state.get("write_feedback"), layers_for(state))
         try:
             draft = deps.llm.structured("report", ReportDraft, messages, stats)
         except LLMOutputError:

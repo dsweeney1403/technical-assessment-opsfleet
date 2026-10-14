@@ -1,0 +1,99 @@
+{
+  "version": "2026-10-14",
+  "metrics": [
+    {
+      "term": "revenue",
+      "definition": "SUM(sale_price) over items whose status is not Cancelled or Returned. Shipped, Complete and Processing items count."
+    },
+    {
+      "term": "counted items and orders",
+      "definition": "Items whose status is not Cancelled or Returned, and the orders that have at least one such item. Every metric below uses counted items unless it says otherwise."
+    },
+    {
+      "term": "gross profit",
+      "definition": "SUM(sale_price - cost) over counted items."
+    },
+    {
+      "term": "margin",
+      "definition": "Gross profit divided by revenue, as a percentage."
+    },
+    {
+      "term": "average order value (AOV)",
+      "definition": "Revenue divided by the number of distinct counted orders."
+    },
+    {
+      "term": "basket size",
+      "definition": "Counted items divided by the number of distinct counted orders."
+    },
+    {
+      "term": "return rate",
+      "definition": "Returned items divided by items that were not Cancelled."
+    },
+    {
+      "term": "cancellation rate",
+      "definition": "Cancelled items divided by all items."
+    },
+    {
+      "term": "repeat rate",
+      "definition": "Share of customers with a counted order in the period who have two or more distinct counted orders in that period."
+    },
+    {
+      "term": "churn",
+      "definition": "A customer has churned when their last counted order is more than 90 days before the end of the period (today if the period runs to today). Churn rate is churned customers divided by customers with at least one counted order before the end of the period."
+    }
+  ],
+  "time_rules": [
+    {
+      "term": "which date",
+      "definition": "Every time-based metric uses the order date, order_created_at. Use DATE(order_created_at) for dates. Never use shipped, delivered or returned dates for periods."
+    },
+    {
+      "term": "this month, this quarter, this year",
+      "definition": "From the first day of the current calendar month, quarter or year up to today."
+    },
+    {
+      "term": "year to date",
+      "definition": "1 January of the current year up to today."
+    },
+    {
+      "term": "last month, last quarter, last year",
+      "definition": "The previous complete calendar month, quarter or year."
+    },
+    {
+      "term": "Q1, Q2, Q3, Q4",
+      "definition": "Calendar quarters: Q1 is January to March, Q2 April to June, Q3 July to September, Q4 October to December. With no year given, use the current year if the quarter has started, otherwise the previous year."
+    },
+    {
+      "term": "compared with last year",
+      "definition": "The same dates one year earlier, so a partial period is compared with the same partial period."
+    }
+  ],
+  "business_terms": [
+    {
+      "term": "top or best customers",
+      "definition": "A segment, never a list of people: the top 10% of customers by revenue in the period. Describe it by size, share of revenue, age bands, gender and locations."
+    },
+    {
+      "term": "active customers",
+      "definition": "Customers with at least one counted order in the period."
+    },
+    {
+      "term": "new customers",
+      "definition": "Customers whose first counted order falls in the period."
+    }
+  ],
+  "scope_rules": [
+    {
+      "term": "own brands only",
+      "definition": "A brand manager's figures cover only their own brands. A total means the total for their brands, not the company."
+    },
+    {
+      "term": "mixed-brand orders",
+      "definition": "An order can hold items from several brands. A brand manager sees only their own items in it, so order value, AOV and basket size are their brands' share of each order."
+    },
+    {
+      "term": "company benchmarks",
+      "definition": "Company-wide figures are not available to brand managers. Don't compare their brands with the company total."
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+# System analysis defaults (D4.15). Used only when a question doesn't say.
+# A user can override each one by stating it ("default to last quarter"); an override shows
+# in the assumptions line as "(your default)". Definitions live in glossary.json, not here.
+period: year to date
+breakdown: none
+brand_order: by revenue

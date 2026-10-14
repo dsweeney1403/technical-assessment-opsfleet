@@ -67,6 +67,7 @@ reports:                              # Group 3
 
 golden:                               # Group 4
   trios_dir: data/golden/trios/
+  index: data/golden/index.json       # prebuilt and committed, stripped text and vectors only (D8.3)
   glossary: config/glossary.json      # D4.2
   k: 3                                # D4.9
   threshold: null                     # set from `golden calibrate`, leaning high (D4.9)

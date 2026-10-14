@@ -6,6 +6,7 @@ startup. Later sections pass through untyped until their phase lands.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Literal
@@ -99,6 +100,32 @@ class FaultSettings(_Strict):
     simulate_embedding_down: bool = False  # phase 6 (D4.8)
 
 
+class Golden(_Strict):
+    trios_dir: Path = Path("data/golden/trios")
+    index: Path = Path("data/golden/index.json")
+    glossary: Path = Path("config/glossary.json")
+    k: int = Field(3, ge=1)
+    threshold: float | None = Field(None, ge=-1, le=1)  # null until `golden calibrate` sets it (D4.9)
+    overfetch: int = Field(20, ge=1)
+
+
+class Profile(_Strict):
+    backend: Literal["sqlite"] = "sqlite"  # production: firestore (D4.25)
+    inferred_preference_after: int = Field(3, ge=1)
+    analysis_defaults: Path = Path("config/analysis_defaults.yaml")
+
+
+class PersonaSettings(_Strict):
+    dir: Path = Path("config/persona")
+    reload_every_turn: Literal[True] = True
+    fallback_to_previous: Literal[True] = True
+
+
+class Feedback(_Strict):
+    thumbs_prompt: bool = True
+    thumbs_down_reason: Literal["optional", "off"] = "optional"
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -113,6 +140,10 @@ class Settings(BaseModel):
     tracing: Tracing = Field(default_factory=Tracing)
     reports: Reports = Field(default_factory=Reports)
     faults: FaultSettings = Field(default_factory=FaultSettings)
+    golden: Golden = Field(default_factory=Golden)
+    profile: Profile = Field(default_factory=Profile)
+    persona: PersonaSettings = Field(default_factory=PersonaSettings)
+    feedback: Feedback = Field(default_factory=Feedback)
 
 
 class User(_Strict):
@@ -174,6 +205,50 @@ def load_users(path: Path | None = None) -> Users:
     if len(ids) != len(set(ids)):
         raise ConfigError("users.yaml: user ids must be unique.")
     return users
+
+
+def resolve(path: Path) -> Path:
+    """Config paths are relative to the repo root, so commands work from any directory."""
+    return path if path.is_absolute() else ROOT / path
+
+
+class GlossaryEntry(_Strict):
+    term: str
+    definition: str
+
+
+class Glossary(_Strict):
+    """Metric definitions, time rules, business terms and scope rules (D4.2). Owned by the data team in production."""
+
+    version: str
+    metrics: list[GlossaryEntry]
+    time_rules: list[GlossaryEntry]
+    business_terms: list[GlossaryEntry]
+    scope_rules: list[GlossaryEntry]
+
+
+def load_glossary(path: Path | None = None) -> Glossary:
+    path = resolve(path or Path("config/glossary.json"))
+    if not path.exists():
+        raise ConfigError(f"Missing glossary: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{path.name} is not valid JSON: {exc}") from exc
+    return _validate(Glossary, data, path.name)
+
+
+class AnalysisDefaults(_Strict):
+    """System defaults a user can override by stating their own (D4.15)."""
+
+    period: str
+    breakdown: str
+    brand_order: str
+
+
+def load_analysis_defaults(path: Path | None = None) -> AnalysisDefaults:
+    path = resolve(path or Path("config/analysis_defaults.yaml"))
+    return _validate(AnalysisDefaults, _read_yaml(path), path.name)
 
 
 class Env(BaseModel):
