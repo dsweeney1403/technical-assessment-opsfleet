@@ -43,7 +43,7 @@ class Rejection:
 @dataclass
 class Validated:
     tree: exp.Query
-    brand_literals: list[str]
+    brand_literals: list[BrandLiteral]
     cte_names: set[str]
 
 
@@ -66,25 +66,38 @@ def _has_blocked_function(tree: exp.Expression) -> str | None:
     return None
 
 
-def _brand_literals(tree: exp.Expression) -> list[str]:
+@dataclass(frozen=True)
+class BrandLiteral:
+    value: str
+    case_insensitive: bool  # compared through LOWER() or UPPER()
+
+
+def _brand_literals(tree: exp.Expression) -> list[BrandLiteral]:
     """String literals compared with the brand column via =, != or IN."""
 
-    def is_brand(node: exp.Expression) -> bool:
+    def brand_side(node: exp.Expression) -> bool | None:
+        folded = False
         while isinstance(node, (exp.Lower, exp.Upper, exp.Trim)):
+            folded = folded or not isinstance(node, exp.Trim)
             node = node.this
-        return isinstance(node, exp.Column) and node.name.lower() == "brand"
+        if isinstance(node, exp.Column) and node.name.lower() == "brand":
+            return folded
+        return None
 
-    found: list[str] = []
+    def literal(node: exp.Expression) -> str | None:
+        return node.this if isinstance(node, exp.Literal) and node.is_string else None
+
+    found: list[BrandLiteral] = []
     for node in tree.find_all(exp.EQ, exp.NEQ, exp.In):
         if isinstance(node, exp.In):
-            if is_brand(node.this):
-                found += [e.this for e in node.expressions if isinstance(e, exp.Literal) and e.is_string]
-        else:
-            left, right = node.this, node.expression
-            if is_brand(left) and isinstance(right, exp.Literal) and right.is_string:
-                found.append(right.this)
-            elif is_brand(right) and isinstance(left, exp.Literal) and left.is_string:
-                found.append(left.this)
+            folded = brand_side(node.this)
+            if folded is not None:
+                found += [BrandLiteral(v, folded) for e in node.expressions if (v := literal(e)) is not None]
+            continue
+        for col, lit in ((node.this, node.expression), (node.expression, node.this)):
+            folded, value = brand_side(col), literal(lit)
+            if folded is not None and value is not None:
+                found.append(BrandLiteral(value, folded))
     return found
 
 

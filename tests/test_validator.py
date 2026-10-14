@@ -96,7 +96,8 @@ def test_brand_literals_found_in_eq_in_and_functions():
         "OR LOWER(brand) = 'calvin klein' OR 'Volcom' = brand"
     )
     assert isinstance(out, Validated)
-    assert sorted(out.brand_literals) == sorted(["Carhartt", "Levi's", "Diesel", "calvin klein", "Volcom"])
+    got = {(b.value, b.case_insensitive) for b in out.brand_literals}
+    assert got == {("Carhartt", False), ("Levi's", False), ("Diesel", False), ("calvin klein", True), ("Volcom", False)}
 
 
 def test_category_literals_are_not_brands():
