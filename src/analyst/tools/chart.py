@@ -12,6 +12,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import pandas as pd  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 from langchain_core.tools import StructuredTool  # noqa: E402
 
 from analyst.store.results import ResultNotFound, ResultStore  # noqa: E402
@@ -42,11 +44,21 @@ def render_chart(
                           "hint": f"Columns in {result_id}: {', '.join(df.columns)}."}}
     if df.empty:
         return {"error": {"message": f"{result_id} has no rows to chart.", "hint": ""}}
+    numeric = df[y].apply(pd.to_numeric, errors="coerce")  # NUMERIC columns arrive as Decimal
+    not_numeric = [c for c in y if numeric[c].isna().all()]
+    if not_numeric:
+        usable = [c for c in df.columns if c != x and pd.to_numeric(df[c], errors="coerce").notna().any()]
+        return {"error": {"message": f"Columns {', '.join(not_numeric)} are not numeric, so they can't be the y axis.",
+                          "hint": f"Numeric columns in {result_id}: {', '.join(usable) or 'none'}."}}
+    plot_df = pd.concat([df[[x]].astype(str), numeric], axis=1)
     fig, ax = plt.subplots(figsize=(9, 5))
-    df.plot(x=x, y=y, kind=chart_type, ax=ax, legend=len(y) > 1)
+    plot_df.plot(x=x, y=y, kind=chart_type, ax=ax, legend=len(y) > 1)
     ax.set_title(title)
     ax.set_xlabel(x)
     ax.set_ylabel(y[0] if len(y) == 1 else "")
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.2g}"))
+    if len(plot_df) > 6:
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "chart"
