@@ -77,6 +77,11 @@ class Charts(_Strict):
     dir: Path
 
 
+class Tracing(_Strict):
+    exporter: Literal["jsonl"] = "jsonl"  # production: otel (D2.23)
+    dir: Path = Path("traces")
+
+
 class FaultSettings(_Strict):
     simulate_llm_429: bool = False
     simulate_llm_down: bool = False
@@ -95,6 +100,7 @@ class Settings(BaseModel):
     empty_results: EmptyResults
     memory: Memory
     charts: Charts
+    tracing: Tracing = Field(default_factory=Tracing)
     faults: FaultSettings = Field(default_factory=FaultSettings)
 
 

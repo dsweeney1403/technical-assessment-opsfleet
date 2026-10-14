@@ -10,6 +10,9 @@ alone (D2.4): a cost limit arrives as HTTP 500 with reason
 bytesBilledLimitExceeded, and a per-second rate limit as 403 with reason
 rateLimitExceeded. BQ_TRANSIENT is retried here, invisible to the agent; when
 retries run out, GatewayUnavailableError ends querying for the turn (D2.13).
+
+Every query emits a `gateway` span for the trace (D2.16): SQL before and after
+the rewrite, code, bytes, rows, diagnosis and latency. Never the rows themselves.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from google.cloud import bigquery
 
 from analyst.config import BigQuerySettings, EmptyResults, User
+from analyst.observability import tracer
 from analyst.sql import diagnosis
 from analyst.sql.brands import BrandMatcher
 from analyst.sql.scope import scoped_tables
@@ -178,7 +182,7 @@ class Gateway:
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
     known: diagnosis.KnownValues | None = None  # loaded once per session (D2.5)
     empty: EmptyResults = field(default_factory=EmptyResults)
-    transient_retries: int = 0  # cumulative for the session, for the trace (phase 4)
+    transient_retries: int = 0  # cumulative for the session; each trace span gets its own count
 
     def _retrying(self, fn: Callable):
         """Run fn, retrying BQ_TRANSIENT with backoff and jitter (D2.4)."""
@@ -195,18 +199,49 @@ class Gateway:
                 self.sleep(BACKOFF_BASE_S * 2 ** (attempt - 1) * (0.5 + random.random()))
         raise AssertionError("unreachable")
 
-    def _execute(self, sql: str, params: list) -> pd.DataFrame:
+    def _execute(self, sql: str, params: list, span: dict | None = None) -> pd.DataFrame:
         job = self.client.query(
             sql, job_config=bigquery.QueryJobConfig(maximum_bytes_billed=self.settings.maximum_bytes_billed,
                                                     query_parameters=params)
         )
         try:
-            return job.result(timeout=self.settings.job_timeout_s).to_dataframe(create_bqstorage_client=False)
+            df = job.result(timeout=self.settings.job_timeout_s).to_dataframe(create_bqstorage_client=False)
         except (TimeoutError, gexc.RetryError, gexc.DeadlineExceeded) as exc:
             job.cancel()
             raise _Timeout() from exc
+        if span is not None:
+            span["bytes_billed"] = getattr(job, "total_bytes_billed", None)
+        return df
 
     def run(self, sql: str, user: User) -> dict:
+        """Run one query and emit its trace span, whatever the outcome."""
+        span: dict = {"sql_in": sql, "sql_rewritten": None, "code": None, "bytes_processed": None,
+                      "bytes_billed": None, "rows": None, "diagnosis": None}
+        retries_before = self.transient_retries
+        start = tracer.now_ns()
+        try:
+            result = self._run(sql, user, span)
+            error = result.get("error")
+            if error:
+                span["code"] = error["code"]
+            else:
+                span["rows"], span["diagnosis"] = result["row_count"], result.get("diagnosis")
+            return result
+        except SafetyStop as stop:
+            span["code"] = stop.rejection.code
+            raise
+        except GatewayUnavailableError:
+            span["code"] = "BQ_DOWN"
+            raise
+        except GatewayFatalError:
+            span["code"] = "BQ_FATAL"
+            raise
+        finally:
+            tracer.emit("gateway", {**span, "error": span["code"],
+                                    "transient_retries": self.transient_retries - retries_before,
+                                    "start_ns": start, "end_ns": tracer.now_ns()})
+
+    def _run(self, sql: str, user: User, span: dict) -> dict:
         checked = validate(sql)
         if isinstance(checked, Rejection):
             if checked.stop:
@@ -219,6 +254,7 @@ class Gateway:
 
         tables, params = scoped_tables(self.curated, user)
         rewritten = wrap_sql(sql, tables)
+        span["sql_rewritten"] = rewritten
         cap = self.settings.max_bytes_processed
         try:
             dry = self._retrying(lambda: self.client.query(
@@ -226,10 +262,11 @@ class Gateway:
                 job_config=bigquery.QueryJobConfig(dry_run=True, use_query_cache=False, query_parameters=params),
             ))
             scanned = dry.total_bytes_processed or 0
+            span["bytes_processed"] = scanned
             if scanned > cap:
                 return _error("COST_LIMIT", f"Query would scan {scanned / 1e6:.1f} MB; the cap is {cap / 1e6:.1f} MB.",
                               COST_HINT)
-            df = self._retrying(lambda: self._execute(rewritten, params))
+            df = self._retrying(lambda: self._execute(rewritten, params, span))
         except _Timeout:
             return _error("TIMEOUT", f"Query took longer than {self.settings.job_timeout_s:.0f} s and was cancelled.",
                           "Aggregate earlier or narrow the date range.")

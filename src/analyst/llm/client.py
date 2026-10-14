@@ -10,6 +10,9 @@ When a model's retries run out, the next model in the role's chain is tried
 (D2.10, D2.11). A breaker on each chain's primary model opens after N
 consecutive transient errors and skips that model for a cooldown (D2.12).
 Fallback use is recorded in CallStats for the trace only.
+
+Each call emits an `llm_call` span for the trace (D2.16): model, messages in and
+out, tokens, latency, retries and fallback use.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 
 from analyst.config import CircuitBreakerSettings, LLMRetry, Settings
+from analyst.observability import tracer
 
 Role = Literal["agent", "light"]
 T = TypeVar("T")
@@ -64,6 +68,9 @@ class CallStats:
     models_used: list[str] = field(default_factory=list)
     fallback_used: bool = False
     breaker_opens: int = 0
+
+    def snapshot(self) -> tuple[int, int, int, int, int]:
+        return (self.retries, self.input_tokens, self.output_tokens, len(self.models_used), self.breaker_opens)
 
     def add_usage(self, message: AIMessage) -> None:
         usage = getattr(message, "usage_metadata", None) or {}
@@ -244,6 +251,44 @@ class LLM:
             return out
         raise last or LLMUnavailableError("Every model is skipped while the breaker is open.")
 
+    def _traced(self, role: Role, messages: Sequence[BaseMessage], stats: CallStats | None,
+                call: Callable[[CallStats], T], tools: Sequence | None = None) -> T:
+        """Run one logical call (retries and fallbacks included) and emit its trace span."""
+        stats = stats if stats is not None else CallStats()
+        retries, tokens_in, tokens_out, n_models, opens = stats.snapshot()
+        start = tracer.now_ns()
+        out, error = None, None
+        try:
+            out = call(stats)
+            return out
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            model = stats.models_used[-1] if len(stats.models_used) > n_models else None
+            if isinstance(out, AIMessage):
+                output = tracer.message_dict(out)
+            elif isinstance(out, BaseModel):
+                output = out.model_dump(mode="json")
+            else:
+                output = None
+            used_in, used_out = stats.input_tokens - tokens_in, stats.output_tokens - tokens_out
+            tracer.emit("llm_call", {
+                "role": role,
+                "model": model,
+                "chain": self.chain(role),
+                "fallback_used": model is not None and model != self.chain(role)[0],
+                "retries": stats.retries - retries,
+                "breaker_opens": stats.breaker_opens - opens,
+                "tokens": {"input": used_in, "output": used_out, "total": used_in + used_out},
+                "tools": [getattr(t, "name", str(t)) for t in tools or []],
+                "messages_in": tracer.messages_dicts(messages),
+                "output": output,
+                "error": f"{type(error).__name__}: {error}" if error is not None else None,
+                "start_ns": start,
+                "end_ns": tracer.now_ns(),
+            })
+
     def invoke(
         self,
         role: Role,
@@ -255,10 +300,12 @@ class LLM:
             runnable = chat.bind_tools(list(tools)) if tools else chat
             return runnable.invoke(list(messages))
 
-        message = self._run(role, call, stats)
-        if stats is not None:
+        def run(stats: CallStats) -> AIMessage:
+            message = self._run(role, call, stats)
             stats.add_usage(message)
-        return message
+            return message
+
+        return self._traced(role, messages, stats, run, tools)
 
     def structured(
         self,
@@ -267,10 +314,14 @@ class LLM:
         messages: Sequence[BaseMessage],
         stats: CallStats | None = None,
     ) -> S:
-        out = self._run(role, lambda chat: chat.with_structured_output(schema, include_raw=True).invoke(list(messages)),
-                        stats)
-        if stats is not None and out.get("raw") is not None:
-            stats.add_usage(out["raw"])
-        if out.get("parsing_error") or out.get("parsed") is None:
-            raise LLMOutputError(f"Structured output failed: {out.get('parsing_error')}")
-        return out["parsed"]
+        def run(stats: CallStats) -> S:
+            out = self._run(
+                role, lambda chat: chat.with_structured_output(schema, include_raw=True).invoke(list(messages)), stats
+            )
+            if out.get("raw") is not None:
+                stats.add_usage(out["raw"])
+            if out.get("parsing_error") or out.get("parsed") is None:
+                raise LLMOutputError(f"Structured output failed: {out.get('parsing_error')}")
+            return out["parsed"]
+
+        return self._traced(role, messages, stats, run)
