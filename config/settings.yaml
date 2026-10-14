@@ -17,6 +17,7 @@ llm_retry:                            # D2.8: transient errors only (429, 5xx, t
   max_attempts: 3
   max_total_wait_s: 30
   honour_retry_after: true
+  request_timeout_s: 60               # a call slower than this counts as a timeout (transient)
 
 circuit_breaker:                      # D2.12
   failures: 5
@@ -40,6 +41,9 @@ memory:
 scope:
   out_of_scope_behaviour: flag        # C2 answered by Roi 2026-10-11: answer on available data, flag the gap (D1.8 row 6)
   allow_company_benchmarks: false     # C1 answered by Roi 2026-10-11: own brands only
+
+charts:
+  dir: charts/                        # make_chart output, gitignored
 
 tracing:                              # D2.16, D2.23
   exporter: jsonl                     # production: otel (Cloud Trace + BigQuery)

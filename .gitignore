@@ -9,6 +9,7 @@
 
 # Runtime output
 traces/
+charts/
 reports/
 *.db
 *.sqlite
