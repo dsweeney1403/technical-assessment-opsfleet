@@ -77,6 +77,13 @@ class Charts(_Strict):
     dir: Path
 
 
+class FaultSettings(_Strict):
+    simulate_llm_429: bool = False
+    simulate_llm_down: bool = False
+    simulate_bq_error: bool = False
+    simulate_embedding_down: bool = False  # phase 6 (D4.8)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -88,6 +95,7 @@ class Settings(BaseModel):
     empty_results: EmptyResults
     memory: Memory
     charts: Charts
+    faults: FaultSettings = Field(default_factory=FaultSettings)
 
 
 class User(_Strict):

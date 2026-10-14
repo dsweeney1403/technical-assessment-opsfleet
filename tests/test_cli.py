@@ -15,20 +15,28 @@ BM = User(id="bm_calvin", name="Calvin Klein brand manager", role="brand_manager
 
 
 class FakeGraph:
-    def __init__(self, outcome):
-        self.outcome = outcome
+    """`outcomes` are used one per turn; an exception outcome fails that turn."""
+
+    def __init__(self, *outcomes):
+        self.outcomes = list(outcomes)
         self.inputs = []
+        self.text = None
 
-    def invoke(self, payload, config):
+    def stream(self, payload, config, stream_mode=None):
         self.inputs.append(payload)
-        if isinstance(self.outcome, Exception):
-            raise self.outcome
-        return {"draft": Draft(text=self.outcome, chart_paths=["charts/x.png"])}
+        outcome = self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
+        yield {"classify": {}}
+        if isinstance(outcome, Exception):
+            raise outcome
+        self.text = outcome
+
+    def get_state(self, config):
+        return SimpleNamespace(values={"draft": Draft(text=self.text, chart_paths=["charts/x.png"])})
 
 
-def use_session(monkeypatch, outcome="**42**", user=CEO):
-    graph = FakeGraph(outcome)
-    monkeypatch.setattr(cli, "build_session", lambda user_id: cli.Session(user, graph, "t"))
+def use_session(monkeypatch, outcome="**42**", user=CEO, *more):
+    graph = FakeGraph(outcome, *more)
+    monkeypatch.setattr(cli, "build_session", lambda user_id, faults=None: cli.Session(user, graph, "t"))
     return graph
 
 
@@ -51,7 +59,7 @@ def test_answer_rendered_with_chart_path(monkeypatch):
     "exc, expected",
     [
         (LLMFatalError(400, "API key not valid"), "doctor"),
-        (LLMUnavailableError("down"), "try again"),
+        (LLMUnavailableError("down"), "Type /retry"),
         (RuntimeError("bug"), "Something went wrong"),
     ],
 )
@@ -65,7 +73,7 @@ def test_errors_are_friendly_and_chat_continues(monkeypatch, exc, expected):
 
 
 def test_unknown_user_is_friendly(monkeypatch):
-    def boom(user_id):
+    def boom(user_id, faults=None):
         raise ConfigError("Unknown user 'zed'. Known users: ceo, bm_calvin, bm_levis.")
 
     monkeypatch.setattr(cli, "build_session", boom)
@@ -104,3 +112,36 @@ def test_doctor_gemini_check_flags_missing_models(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
     check = doctor.check_gemini()
     assert not check.ok and "gemini-3.5-flash-lite" in check.detail
+
+
+def test_retry_resumes_the_stopped_turn_from_the_checkpoint(monkeypatch):
+    graph = use_session(monkeypatch, LLMUnavailableError("down"), CEO, "Resumed answer")
+    result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="revenue?\n/retry\n/retry\n/exit\n")
+    assert "Type /retry" in result.output and "Resumed answer" in result.output
+    assert graph.inputs == [{"user_input": "revenue?", "user": CEO}, None]  # None resumes the checkpoint
+    assert "Nothing to retry." in result.output  # second /retry: nothing pending
+
+
+def test_simulate_flags_reach_the_session_and_are_announced(monkeypatch):
+    seen = {}
+
+    def build(user_id, faults=None):
+        seen["faults"] = faults
+        return cli.Session(CEO, FakeGraph("ok"), "t")
+
+    monkeypatch.setattr(cli, "build_session", build)
+    result = runner.invoke(cli.app, ["chat", "--user", "ceo", "--simulate-llm-429", "--simulate-bq-error"],
+                           input="/exit\n")
+    assert seen["faults"] == cli.Faults(llm_429=True, bq_error=True)
+    assert "Simulating: Gemini 429" in result.output and "BigQuery errors" in result.output
+
+
+def test_status_line_text_for_updates():
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    query = AIMessage("", tool_calls=[{"name": "run_sql", "args": {}, "id": "1"}])
+    bad = ToolMessage('{"error": {"code": "UNKNOWN_TABLE"}}', tool_call_id="1", name="run_sql")
+    assert cli.status_for({"agent": {"turn_messages": [query]}}) == "Running a query..."
+    assert cli.status_for({"tools": {"turn_messages": [query, bad]}}) == "Checking the query..."
+    assert cli.status_for({"output_check": {"turn_messages": [HumanMessage("fix")]}}) == "Checking the answer..."
+    assert cli.status_for({"classify": {}}) is None
