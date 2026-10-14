@@ -39,7 +39,8 @@ def check_gemini() -> Check:
         from google import genai
 
         settings, env = load_settings(), load_env()
-        names = {m.name.removeprefix("models/") for m in genai.Client(api_key=env.gemini_api_key).models.list()}
+        client = genai.Client(api_key=env.gemini_api_key)  # keep a reference: the list pages lazily
+        names = {m.name.removeprefix("models/") for m in client.models.list()}
     except ConfigError as exc:
         return Check("Gemini", False, str(exc), fix)
     except Exception as exc:

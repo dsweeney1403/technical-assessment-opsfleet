@@ -40,7 +40,7 @@ class LLMFatalError(LLMError):
 
     def __init__(self, status: int | None, detail: str):
         self.status = status
-        super().__init__(f"Gemini rejected the request ({status or 'error'}): {detail}. {DOCTOR_HINT}")
+        super().__init__(f"Gemini rejected the request ({status or 'error'}): {detail.rstrip('.')}. {DOCTOR_HINT}")
 
 
 class LLMUnavailableError(LLMError):

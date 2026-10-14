@@ -77,7 +77,7 @@ def friendly_errors(debug: bool = False) -> Iterator[None]:
 
 def whoami(user: User) -> str:
     brands = "all brands" if user.all_brands else ", ".join(user.brands)
-    return f"{user.name} ({user.id}, {user.role.replace('_', ' ')}). Brands: {brands}."
+    return f"{user.name} (user id {user.id}). Brands: {brands}."
 
 
 def answer(session: Session, text: str) -> None:

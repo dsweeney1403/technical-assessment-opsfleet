@@ -112,7 +112,7 @@ class Gateway:
                 rewritten, job_config=bigquery.QueryJobConfig(maximum_bytes_billed=cap)
             )
             try:
-                df = job.result(timeout=self.settings.job_timeout_s).to_dataframe()
+                df = job.result(timeout=self.settings.job_timeout_s).to_dataframe(create_bqstorage_client=False)
             except (TimeoutError, gexc.RetryError, gexc.DeadlineExceeded):
                 job.cancel()
                 return _error(

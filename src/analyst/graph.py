@@ -17,6 +17,7 @@ from datetime import date
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 
 from analyst import memory, prompts
@@ -30,6 +31,15 @@ from analyst.tools.chart import make_chart_tool
 from analyst.tools.run_sql import make_run_sql_tool
 
 LIGHT_INTENTS = {Intent.conversation, Intent.data_question}
+# State types the checkpointer may restore. Anything else is refused.
+CHECKPOINT_TYPES = [
+    ("analyst.config", "User"),
+    ("analyst.state", "Record"),
+    ("analyst.state", "Intent"),
+    ("analyst.state", "Classified"),
+    ("analyst.state", "Budget"),
+    ("analyst.state", "Draft"),
+]
 BUDGET_SPENT = (
     "The tool budget for this turn is used up. Answer now with the results you have, "
     "and say plainly what you could not get."
@@ -190,5 +200,6 @@ def build_graph(deps: Deps, checkpointer=None):
     g.add_edge("output_check", "respond")
     g.add_edge("respond", "save")
     g.add_edge("save", END)
-    return g.compile(checkpointer=checkpointer or InMemorySaver())
+    saver = checkpointer or InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES))
+    return g.compile(checkpointer=saver)
 

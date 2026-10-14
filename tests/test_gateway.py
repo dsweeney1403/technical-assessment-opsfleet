@@ -32,7 +32,7 @@ class FakeJob:
             raise self._exc
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return self._df
 
     def cancel(self):

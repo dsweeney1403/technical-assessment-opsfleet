@@ -101,7 +101,7 @@ def test_bad_key_not_retried_and_points_to_doctor():
     with pytest.raises(LLMFatalError, match="doctor") as info:
         with_retries(fn, POLICY, sleep=lambda s: None)
     assert calls["n"] == 1 and info.value.status == 400
-    assert "API key not valid" in str(info.value)
+    assert "API key not valid. Run" in str(info.value)
 
 
 def test_unrelated_exception_propagates():
