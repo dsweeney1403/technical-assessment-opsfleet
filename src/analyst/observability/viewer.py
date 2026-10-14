@@ -99,6 +99,13 @@ def _label(span: dict) -> Text:
         return _line("gateway", a.get("code") or f"{a.get('rows')} rows", _mb(a.get("bytes_billed")),
                      f"BigQuery retries {a['transient_retries']}" if a.get("transient_retries") else None,
                      f"diagnosis: {diag_text}" if diag_text else None, ms, style=error)
+    if name == "retrieval":
+        trios = a.get("trios") or []
+        found = ", ".join(f"{t['trio_id']} {t['score']:.2f}" for t in trios) or "no trios"
+        return _line("retrieval", a.get("status") if a.get("status") != "ok" else found,
+                     f"threshold {a.get('threshold')}" if a.get("threshold") is not None else None,
+                     f"{a['out_of_scope']} outside your brands dropped" if a.get("out_of_scope") else None, ms,
+                     style="yellow" if a.get("status") not in (None, "ok") else "")
     if name == "output_check":
         return _line("output check", f"leaks blocked: {len(a.get('leak_hits', []))}",
                      f"numbers removed: {', '.join(a['numbers_removed']) if a.get('numbers_removed') else 'none'}",
@@ -141,6 +148,9 @@ def _details(span: dict, full: bool) -> list[Text]:
             out.append(_block("user context", "; ".join(a["user_context"])))
     elif name in ("decline", "delete_reports") and a.get("text"):
         out.append(_block("text", a["text"]))
+    elif name == "retrieval" and a.get("below_threshold"):
+        below = ", ".join(f"{s['trio_id']} {s['score']:.2f}" for s in a["below_threshold"][:5])
+        out.append(_block("below threshold", below, "dim"))
     elif name == "output_check" and a.get("leak_hits"):
         out.append(_block("leaks", "; ".join(a["leak_hits"]), "red"))
     if full:

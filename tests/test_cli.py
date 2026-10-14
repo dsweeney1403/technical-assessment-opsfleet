@@ -143,10 +143,11 @@ def test_simulate_flags_reach_the_session_and_are_announced(monkeypatch):
         return cli.Session(CEO, FakeGraph("ok"), "t", Tracer(load_settings(), CEO, "t"))
 
     monkeypatch.setattr(cli, "build_session", build)
-    result = runner.invoke(cli.app, ["chat", "--user", "ceo", "--simulate-llm-429", "--simulate-bq-error"],
-                           input="/exit\n")
-    assert seen["faults"] == cli.Faults(llm_429=True, bq_error=True)
+    result = runner.invoke(cli.app, ["chat", "--user", "ceo", "--simulate-llm-429", "--simulate-bq-error",
+                                     "--simulate-embedding-down"], input="/exit\n")
+    assert seen["faults"] == cli.Faults(llm_429=True, bq_error=True, embedding_down=True)
     assert "Simulating: Gemini 429" in result.output and "BigQuery errors" in result.output
+    assert "embeddings down" in result.output
 
 
 def test_status_line_text_for_updates():

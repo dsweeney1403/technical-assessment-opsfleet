@@ -64,8 +64,12 @@ class Session:
 def build_session(user_id: str, faults: Faults | None = None) -> Session:
     from google.cloud import bigquery
 
+    from analyst.config import resolve
+    from analyst.golden.retrieve import Retriever
+    from analyst.golden.vector_store import VectorStore
     from analyst.graph import Deps, build_graph
     from analyst.llm.client import LLM
+    from analyst.llm.embeddings import Embedder, genai_client
     from analyst.sql.brands import BrandMatcher
     from analyst.sql.diagnosis import load_known_values
     from analyst.sql.gateway import BQ_ERRORS, Gateway, load_brands, load_curated
@@ -94,11 +98,17 @@ def build_session(user_id: str, faults: Faults | None = None) -> Session:
     gateway = Gateway(settings.bigquery, client, store, curated, brands, known=known, empty=settings.empty_results)
     factory = fault_injection.chat_factory(ChatGoogleGenerativeAI, faults, settings.models.agent)
     llm = LLM(settings, env.gemini_api_key, chat_factory=factory)
+    index_path = resolve(settings.golden.index)
+    store_ = VectorStore.load(index_path) if index_path.exists() else None
+    embedder = Embedder(settings, env.gemini_api_key,
+                        client_factory=fault_injection.embedding_client_factory(genai_client, faults))
+    retriever = Retriever(store_, embedder, settings.golden)
     reports = SQLiteReportStore(settings.reports.sqlite_path)
     reports.purge(settings.reports.purge_after_days)  # D3.23; production runs this as a scheduled job
     profiles = SQLiteProfileStore(settings.reports.sqlite_path)  # same file as the reports (D4.25)
     graph = build_graph(Deps(settings, llm, gateway, store, brands=brands, known=known, reports=reports,
-                             mentions=MentionScanner(brands.all_brands, known), profiles=profiles))
+                             mentions=MentionScanner(brands.all_brands, known), profiles=profiles,
+                             retriever=retriever))
     thread_id = uuid.uuid4().hex
     return Session(user, graph, thread_id, Tracer(settings, user, thread_id), reports, profiles)
 
@@ -285,6 +295,8 @@ def chat(
     simulate_llm_429: bool = typer.Option(False, "--simulate-llm-429", help="Agent's primary model returns 429"),
     simulate_llm_down: bool = typer.Option(False, "--simulate-llm-down", help="Every Gemini model returns 503"),
     simulate_bq_error: bool = typer.Option(False, "--simulate-bq-error", help="Every BigQuery query fails"),
+    simulate_embedding_down: bool = typer.Option(False, "--simulate-embedding-down",
+                                                 help="Every embedding call fails, so no trios are retrieved"),
 ) -> None:
     """Chat with the analyst as a configured user."""
     session = None
@@ -294,6 +306,7 @@ def chat(
             llm_429=simulate_llm_429 or configured.simulate_llm_429,
             llm_down=simulate_llm_down or configured.simulate_llm_down,
             bq_error=simulate_bq_error or configured.simulate_bq_error,
+            embedding_down=simulate_embedding_down or configured.simulate_embedding_down,
         )
         session = build_session(user, faults)
     if session is None:

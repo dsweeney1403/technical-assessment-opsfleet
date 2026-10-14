@@ -35,6 +35,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from analyst import memory, preferences, prompts
+from analyst.golden import retrieve as retrieval
 from analyst.persona import load_persona
 from analyst.config import AnalysisDefaults, Glossary, Settings, User, load_analysis_defaults, load_glossary
 from analyst.llm.client import LLM, CallStats, LLMError, LLMOutputError
@@ -78,7 +79,7 @@ CHECKPOINT_TYPES = [
     ("analyst.config", "User"),
     *[("analyst.state", name) for name in (
         "Record", "Intent", "Classified", "Budget", "Draft", "SecurityEvent", "Section", "Outline", "SectionResult",
-        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete", "PersonaInUse", "StatedPreference")],
+        "Finding", "Target", "Action", "ReportDraft", "CurrentReport", "ShownReport", "PendingDelete", "PersonaInUse", "StatedPreference", "RetrievedTrio")],
     *[("analyst.store.base", name) for name in ("UserProfile", "Preference")],
 ]
 BUDGET_SPENT = (
@@ -118,6 +119,7 @@ class Deps:
     defaults: AnalysisDefaults | None = field(default_factory=load_analysis_defaults)  # D4.15
     persona_dir: Path | None = None  # settings.persona.dir when not given
     profiles: ProfileStore | None = None  # in-memory SQLite when not given (tests)
+    retriever: retrieval.Retriever | None = None  # no index when not given: no trios (tests)
 
 
 def _charge(budget: Budget, stats: CallStats) -> Budget:
@@ -191,6 +193,7 @@ def build_graph(deps: Deps, checkpointer=None):
     persona_dir = deps.persona_dir or deps.settings.persona.dir
     profiles = deps.profiles or SQLiteProfileStore(":memory:")
     infer_after = deps.settings.profile.inferred_preference_after
+    retriever = deps.retriever or retrieval.Retriever(None, None, deps.settings.golden)
 
     def is_report_turn(state: AgentState) -> bool:
         classified = state.get("classified")
@@ -212,7 +215,8 @@ def build_graph(deps: Deps, checkpointer=None):
         persona, profile = state.get("persona"), state.get("profile")
         return prompts.Layers(glossary=deps.glossary, defaults=deps.defaults,
                               preferences=preferences.render(profile), own_defaults=preferences.own_defaults(profile),
-                              persona=persona.text if persona else "", persona_version=persona.version if persona else "")
+                              persona=persona.text if persona else "", persona_version=persona.version if persona else "",
+                              examples=retrieval.render(state.get("trios") or []))
 
     def chat_messages(state: AgentState) -> list[BaseMessage]:
         classified = state["classified"]
@@ -331,6 +335,7 @@ def build_graph(deps: Deps, checkpointer=None):
             "profile": profiles.get(state["user"]),
             "preference_note": None,
             "definition_request": False,
+            "trios": [],
             "trace_id": uuid.uuid4().hex[:8],
             "continues": None,
             "messages": state.get("messages", []),
@@ -424,13 +429,25 @@ def build_graph(deps: Deps, checkpointer=None):
             return "light_reply"
         if classified.intent == Intent.report_action:
             op = classified.report_op
-            if op in ("create", "redo"):
-                return "plan"
+            if op == "create":
+                return "retrieve"  # once, at the start of the report (D4.5)
+            if op == "redo":
+                return "plan"  # reuses the report's trios
             if op == "save":
                 return "save_report"
             if op == "download":
                 return "download_report"
+        if classified.intent in (Intent.analysis, Intent.unavailable):
+            return "retrieve"  # a forced step on every analysis turn (D4.5)
         return "agent"
+
+    def retrieve_node(state: AgentState) -> dict:
+        stats = CallStats()
+        found = retriever.retrieve(state["user_input"], state["user"], stats)
+        return {"trios": found.trios, "budget": _charge(state["budget"], stats)}
+
+    def route_after_retrieve(state: AgentState) -> str:
+        return "plan" if is_report_turn(state) else "agent"
 
     def decline(state: AgentState) -> dict:
         reason = state["decline"]
@@ -464,16 +481,17 @@ def build_graph(deps: Deps, checkpointer=None):
         if previous is not None and not previous.from_this_session:
             return {"draft": Draft(text=EARLIER_SESSION, source="code")}
         stats = CallStats()
+        trios = previous.trios if previous is not None else state.get("trios") or []
         messages = flow.plan_messages(
             state["user"], deps.today(), state["user_input"], state["messages"], state["summary"],
             memory.records_block(state["records"]), max_sections, deps.known, previous, state["outline_feedback"],
-            layers_for(state))
+            layers_for({**state, "trios": trios}))
         try:
             outline = deps.llm.structured("report", Outline, messages, stats)
         except LLMOutputError:
             return {"draft": Draft(text=PLAN_FAILED, source="code"), "budget": _charge(state["budget"], stats)}
         outline = flow.checked_outline(outline, deps.store, _user_texts(state), max_sections)
-        return {"outline": outline, "redo_of": previous, "sections_done": [], "decision": None,
+        return {"outline": outline, "redo_of": previous, "sections_done": [], "decision": None, "trios": trios,
                 "budget": _charge(state["budget"], stats)}
 
     def route_after_plan(state: AgentState) -> str:
@@ -555,7 +573,7 @@ def build_graph(deps: Deps, checkpointer=None):
             report_id=previous.report_id if previous is not None else None,
             version=previous.version if previous is not None else 0,
             title=draft.title, body=body, request=state["user_input"], outline=outline, draft=draft,
-            result_ids=result_ids, chart_paths=charts, data_ts=data_ts,
+            result_ids=result_ids, chart_paths=charts, data_ts=data_ts, trios=state.get("trios") or [],
         )
         return {"draft": Draft(text=body, source="report", chart_paths=charts, exempt=exempt), "report": report,
                 "write_feedback": None, "budget": _charge(state["budget"], stats)}
@@ -737,7 +755,8 @@ def build_graph(deps: Deps, checkpointer=None):
 
     g = StateGraph(AgentState)
     for name, fn in [("load_context", load_context), ("classify", classify_node), ("light_reply", light_reply),
-                     ("decline", decline), ("preferences", preferences_node), ("agent", make_agent(chat_messages)),
+                     ("decline", decline), ("preferences", preferences_node), ("retrieve", retrieve_node),
+                     ("agent", make_agent(chat_messages)),
                      ("tools", tools),
                      ("plan", plan), ("confirm_outline", confirm_outline), ("section", section), ("write", write),
                      ("save_report", save_report), ("download_report", download_report),
@@ -746,10 +765,10 @@ def build_graph(deps: Deps, checkpointer=None):
         g.add_node(name, fn)
     g.add_edge(START, "load_context")
     g.add_edge("load_context", "classify")
-    g.add_conditional_edges("classify", route_after_classify,
-                            ["preferences", "light_reply", "decline", "agent", "plan", "save_report", "download_report"])
-    g.add_conditional_edges("preferences", route_after_preferences,
-                            ["output_check", "light_reply", "decline", "agent", "plan", "save_report", "download_report"])
+    routes = ["retrieve", "light_reply", "decline", "agent", "plan", "save_report", "download_report"]
+    g.add_conditional_edges("classify", route_after_classify, ["preferences", *routes])
+    g.add_conditional_edges("preferences", route_after_preferences, ["output_check", *routes])
+    g.add_conditional_edges("retrieve", route_after_retrieve, ["agent", "plan"])
     g.add_edge("light_reply", "output_check")
     g.add_edge("decline", "output_check")
     g.add_conditional_edges("agent", route_after_agent, ["tools", "output_check"])

@@ -22,14 +22,14 @@ TASK_TYPES = {"document": "RETRIEVAL_DOCUMENT", "query": "RETRIEVAL_QUERY"}
 BATCH = 100  # texts per request
 
 
-def _genai_client(api_key: str):
+def genai_client(api_key: str):
     from google import genai
 
     return genai.Client(api_key=api_key)
 
 
 class Embedder:
-    def __init__(self, settings: Settings, api_key: str, client_factory: Callable = _genai_client,
+    def __init__(self, settings: Settings, api_key: str, client_factory: Callable = genai_client,
                  sleep: Callable[[float], None] = time.sleep):
         self.model = settings.models.embedding
         self.dimensions = settings.models.embedding_dimensions

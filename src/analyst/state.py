@@ -152,6 +152,17 @@ class ReportDraft(BaseModel):
     next_questions: list[str] = Field(default_factory=list)
 
 
+class RetrievedTrio(BaseModel):
+    """A stripped trio retrieved for this turn (D4.5). No SQL, no figures."""
+
+    trio_id: str
+    question: str
+    description: str
+    report: str
+    brands: list[str] = Field(default_factory=list)
+    score: float
+
+
 class CurrentReport(BaseModel):
     """The latest report in this session, saved or not (D3.8)."""
 
@@ -167,6 +178,7 @@ class CurrentReport(BaseModel):
     chart_paths: list[str] = Field(default_factory=list)
     data_ts: str = ""
     from_this_session: bool = True  # False when opened from the library: its results are gone (D3.6)
+    trios: list[RetrievedTrio] = Field(default_factory=list)  # retrieved once per report, reused on a redo (D4.5)
 
 
 class ShownReport(BaseModel):
@@ -221,6 +233,7 @@ class AgentState(TypedDict, total=False):
     opened_report: str | None  # report_id opened this turn, shown as saved (D3.16)
     pending_delete: PendingDelete | None
     persona: PersonaInUse | None
+    trios: list[RetrievedTrio]  # retrieved this turn, or carried from the report being changed (D4.5)
     profile: UserProfile | None  # the user's preferences and defaults, read each turn (D4.18)
     preference_note: str | None  # acknowledgement of a preference saved this turn
     definition_request: bool  # the user asked to redefine a glossary term (D4.15)

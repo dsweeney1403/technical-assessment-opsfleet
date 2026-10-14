@@ -6,6 +6,9 @@ Spans come from three places:
   latency, retries and fallback use. Only the wrapper knows the retries and the chain.
 - A custom event from the SQL gateway per query: SQL before and after the rewrite,
   code, bytes, rows, diagnosis and latency.
+- A custom event per trio retrieval: the trio ids and scores injected, how many
+  fell below the threshold or outside the user's brands, and `trios_unavailable`
+  on an embedding outage (D4.8, D4.9).
 
 The trace stores what the model saw, which is PII-free by construction (D1.4).
 Raw BigQuery rows from before the gateway are never passed in. Spans keep
@@ -219,7 +222,7 @@ class TraceHandler(BaseCallbackHandler):
     # Custom events: llm_call from the LLM wrapper, gateway from the SQL gateway
 
     def on_custom_event(self, name, data, *, run_id, **kw):
-        if name not in ("llm_call", "gateway"):
+        if name not in ("llm_call", "gateway", "retrieval"):
             return
         data = dict(data)
         start, end = data.pop("start_ns"), data.pop("end_ns")
