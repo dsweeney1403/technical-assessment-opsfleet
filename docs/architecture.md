@@ -6,11 +6,12 @@ Decision IDs (D1.1, D6.4, ...) refer to the design log, where each decision reco
 
 ## Production design
 
-Everything runs on Google Cloud, inside one VPC Service Controls perimeter (D6.13), in the region that holds the company's BigQuery data (D6.14).
+Everything runs on Google Cloud, inside one VPC Service Controls perimeter (D6.13), in the region that holds the company's BigQuery data (D6.14). The one exception is saved reports, which are Google Docs in the company's Google Workspace (D3.14).
 
 ```mermaid
 flowchart LR
     U["Executives<br/>web app"]
+    W["Google Workspace<br/>Google Docs: saved reports<br/>shared drive, domain only"]
 
     subgraph GCP["Google Cloud, inside a VPC Service Controls perimeter"]
         S["Agent service<br/>Cloud Run: FastAPI + LangGraph<br/>SQL gateway, admin pages"]
@@ -22,9 +23,11 @@ flowchart LR
     end
 
     U -->|"Google sign-in, IAP"| S
+    U -.->|"read saved reports"| W
     S -->|"prompts, tool calls"| M
     S -->|"SQL as the user"| D
     S -->|"read, write"| A
+    S -->|"Docs"| W
     S -->|"traces"| O
     J --> A
     J -->|"eval results"| O
@@ -78,7 +81,7 @@ The order of these steps is a graph, not a prompt. The classifier, retrieval and
 | Cloud SQL for PostgreSQL | LangGraph checkpoints with the official Postgres saver: conversation state, including pending confirmations. Smallest instance, IAM authentication, 30-day retention. | D6.5 |
 | Cloud Storage | Stored query results, one file per result, path built by code from user and session. Deleted after a day by a lifecycle rule. | D6.6 |
 | Firestore Enterprise | Reports (versions, soft delete with a TTL purge, audit), user profiles, remembered context items, the trio index with vector search, and full-text search for "reports mentioning X". | D3.10, D4.6, D4.18, D6.8 |
-| Google Drive and Docs APIs | Each saved report becomes a Google Doc in a shared drive owned by the agent's service account, shared with its owner only as a commenter. Download, print and copy are off, and sharing stays inside the domain. Deletes trash the Doc and lost brand access removes the user from it, so the Doc follows the app's rules. | D3.13, D3.14, D3.15, D3.23 |
+| Google Drive and Docs APIs | Each saved report becomes a Google Doc in a shared drive owned by the agent's service account, shared with its owner only as a commenter. Download, print and copy are off, and sharing stays inside the domain. Deletes trash the Doc and lost brand access removes the user from it, so the Doc follows the app's rules. Drive is a Workspace service, outside the VPC Service Controls perimeter, so Workspace's own controls protect it: the shared drive, domain-only sharing and Drive audit logs. | D3.13, D3.14, D3.15, D3.23 |
 | Cloud Run jobs + Cloud Scheduler + Eventarc | Same image as the service. Scheduler runs the nightly post-session review, checkpoint cleanup and nightly evals. Eventarc runs trio indexing when a trio file lands. | D6.7, D6.9 |
 | Cloud Trace + BigQuery (traces) | One OpenTelemetry trace per turn. Spans go to Cloud Trace for the waterfall and to BigQuery for metrics and deep dives. | D2.16, D2.23 |
 | Cloud Monitoring | Dashboards for the business and engineering views, plus alerts (leak-scan block, breaker open, job failure). | D2.18 |

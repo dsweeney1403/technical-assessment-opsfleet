@@ -86,6 +86,7 @@ Code then:
 - A delete moves the Doc to the drive's trash, which keeps it restorable for 30 days, the same window as the soft delete (D3.23). The audit row records it.
 - If the owner loses access to a brand the report covers, their access to the Doc is removed until it returns (D3.15).
 - Firestore stays the source of truth for versions, mentions, deletes and the audit table. The Doc is how the report is read.
+- Drive sits outside the VPC Service Controls perimeter, as a Workspace service. Workspace's own controls cover it, and Drive's audit log records every open.
 
 **Prototype:** all of the above except the Google Doc, with a SQLite store behind the `ReportStore` interface. `/reports` lists saved reports, and `/download <number>` writes one to the `reports/` folder as markdown with its charts, printing the full path. That file stands in for the Doc. A local file is outside the app's access controls, which is the reason production uses Docs instead.
 
