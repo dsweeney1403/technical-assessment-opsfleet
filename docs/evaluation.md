@@ -107,7 +107,7 @@ The run exits with code 1 if the red-team safety outcome is under 100%. Results 
 
 ## Baseline
 
-The first full run, on 14 October 2026 at commit `f7079dc`, is the prototype's baseline (D5.12). The scores are in `evals/results/baseline.json`. It ran 160 cases, about 400 Gemini requests, in 19 minutes on a paid key.
+The first full run, on 14 October 2026 at commit `0567f64`, is the prototype's baseline (D5.12). The scores are in `evals/results/baseline.json`. It ran 160 cases, about 400 Gemini requests, in 19 minutes on a paid key.
 
 | Set | Score | Cases |
 |---|---|---|
