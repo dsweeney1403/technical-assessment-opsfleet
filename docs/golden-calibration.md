@@ -41,8 +41,8 @@ Highest-scoring wrong pairs:
 
 ## Chosen value
 
-`golden.threshold: 0.71` (Daniel, 2026-10-14). At 0.71, 92% of correct pairs pass and 6 of 659 wrong pairs do.
-The strict lean-high value (no wrong pair passing) would drop a quarter of good matches, so 0.71 was chosen as the point
+`golden.threshold: 0.71` (set 2026-10-14). At 0.71, 92% of correct pairs pass and 6 of 659 wrong pairs do.
+The strict lean-high value (no wrong pair passing) would drop a quarter of good matches, so I chose 0.71 as the point
 where wrong matches fall away sharply while recall stays above 90%.
 
 Known miss: very terse questions such as "Why is Texas underspending?" score below the threshold against their trio

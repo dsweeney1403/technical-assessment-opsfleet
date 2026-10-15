@@ -106,7 +106,7 @@ The order of these steps is a graph, not a prompt. The classifier, retrieval and
 
 ### Why LangGraph and Gemini
 
-**LangGraph (D1.19).** The design rests on forced steps (classifier, retrieval, output check) around one bounded agent loop. LangGraph's explicit graph makes those steps impossible for the model to skip. Its `interrupt()` and checkpointing give the delete and outline confirmations, and resumable conversations, with little code. Experience: Daniel has shipped LangGraph in production, so delivery risk on a time-boxed build is low. Google's ADK is a credible alternative and would be worth adopting on a long-running project, or if the client standardises on Agent Runtime.
+**LangGraph (D1.19).** The design rests on forced steps (classifier, retrieval, output check) around one bounded agent loop. LangGraph's explicit graph makes those steps impossible for the model to skip. Its `interrupt()` and checkpointing give the delete and outline confirmations, and resumable conversations, with little code. Experience: I have shipped LangGraph in production, so delivery risk on a time-boxed build is low. Google's ADK is a credible alternative and would be worth adopting on a long-running project, or if the client standardises on Agent Runtime.
 
 **Gemini (D2.10, D1.9).** The brief prefers newer Gemini models, and running them on the Gemini Enterprise Agent Platform keeps prompts and results inside Google Cloud. Flash does the agent work; Flash-Lite does routing and confirmations, which are frequent and simple. Fallback goes from `gemini-3.8-flash` to `gemini-3.6-flash` to `gemini-3.5-flash-lite`. No external LLM gateway is used, so data never leaves Google's platform.
 
