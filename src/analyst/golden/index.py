@@ -141,7 +141,7 @@ def build_index(trios: list[tuple[TrioSource, Path]], root: Path, llm: LLM, embe
                 brands: BrandMatcher) -> tuple[TrioIndex, dict[str, list[str]]]:
     indexed, dropped = [], {}
     for trio, path in trios:
-        item, lost = index_trio(trio, str(path.relative_to(root)), llm, brands)
+        item, lost = index_trio(trio, path.relative_to(root).as_posix(), llm, brands)  # "/" on every OS
         indexed.append(item)
         if lost:
             dropped[trio.id] = lost
