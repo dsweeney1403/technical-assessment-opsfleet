@@ -126,7 +126,7 @@ Reports and the audit table live in `reports.db`, a local SQLite file that is gi
 `python -m analyst eval` runs the eval sets against the real models and data:
 - The intent classifier, the delete-reply classifier, trio retrieval and SQL accuracy.
 - Five end-to-end conversations.
-- A red team of 16 attacks, each run three times.
+- A red team of 16 attacks, each run three times. A red team is a set of deliberate attacks that try to make the agent break a safety rule: leak PII, show another brand's figures, run a non-SELECT query or delete a report without a yes.
 
 It prints a score per set and the red-team safety outcome, which must be 100%: the command exits with code 1 otherwise. Results are written as `eval_runs` and `eval_cases` files in `evals/results/`. Open any failed case with `python -m analyst trace <id>`. The first baseline is committed in `evals/results/baseline.json`. A full run is about 400 Gemini requests, more than a free key allows in a day. On the free tier, try `--only classifier` or `--only delete_reply` (Flash-Lite only, a few minutes each at the default throttle) and read the baseline for the rest. See [evaluation](docs/evaluation.md).
 
