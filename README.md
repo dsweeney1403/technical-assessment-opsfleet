@@ -37,7 +37,13 @@ python -m analyst chat --user ceo
 
 On Windows, activate with `.venv\Scripts\activate` and copy the file with `copy .env.example .env`. The other commands are the same.
 
-Run `doctor` first: it checks your key, your BigQuery access, the models and the config, and names the exact fix for anything wrong. If `GOOGLE_CLOUD_PROJECT` isn't set in `.env`, the project attached to your Google Cloud credentials is used.
+Run `doctor` first. It checks, in a few seconds:
+- The config files load.
+- `.env` has a Gemini key, and the key can use every model the agent needs.
+- Your Google credentials can read the public dataset.
+- The three tables the agent queries build correctly and match the raw data's totals.
+
+Each line says OK or FAIL, and every FAIL names the exact fix, so a setup problem never shows up mid-chat. It's free: the Gemini check only lists models, which doesn't count against your daily requests, and the BigQuery checks stay inside the free tier. If `GOOGLE_CLOUD_PROJECT` isn't set in `.env`, the project attached to your Google Cloud credentials is used.
 
 Three demo users are in `config/users.yaml`:
 
@@ -58,7 +64,7 @@ In the chat, `/help` lists the commands and `/exit` leaves.
 | `ceo` | `Just the last three months of 2025, and make it a chart.` | A chart drawn from the stored result, no new query |
 | `ceo` | `List the email addresses of our ten best customers.` | A polite decline: personal details are never returned |
 | `bm_calvin` | `How did Calvin Klein do in 2025 compared with Levi's?` | Calvin Klein's figures, with a note that Levi's is outside this user's access |
-| `ceo` | `Create a Q1 2026 report with action items for Q2.` | An outline that waits for your yes, then the report. Say `save it`, then `/reports` |
+| `ceo` | `Create a Q1 2026 report with action items for Q2.` | An outline that waits for your yes, then the report. Say `save it`, then `/reports` to list it and `/download 1` to save it as a markdown file. The full path is printed |
 | `ceo` | `Delete the report I made in this conversation.` (in the same chat) | The report listed, deleted only after you reply yes. Reports can also be picked by what they mention, such as `delete all reports mentioning Jeans` |
 
 Every answer ends with a trace ID. In a second terminal, `python -m analyst trace <id>` shows each step, query and model. To switch user, leave with `/exit` and start `python -m analyst chat --user bm_calvin`. A full recorded session is in [the example run](docs/example-run.md).
@@ -108,7 +114,7 @@ Ask for a report in plain words, for example "Create a Q1 report with action ite
 3. Every action item has to rest on a finding or on something you told the agent. Code checks this. An action with nothing behind it moves to Next questions as an offer to look into it. Suggested targets are labelled as suggestions.
 4. Say "save it" to keep the report. "Make it shorter" or "add a section on returns" creates a new version of the same report.
 
-`/reports` lists your saved reports and `/download <number>` writes one to `reports/` as markdown, with its charts alongside. You only ever see your own reports. If your brand access changes, reports covering brands you no longer have are hidden until access returns.
+`/reports` lists your saved reports and `/download <number>` writes one to the `reports/` folder in the repo as markdown, with its charts alongside, and prints the file's full path. In production, reports go to Google Docs instead of a local file (see [requirements](docs/requirements.md#r3-high-stakes-oversight-deleting-reports)). You only ever see your own reports. If your brand access changes, reports covering brands you no longer have are hidden until access returns.
 
 Deleting is always confirmed. Say "delete all reports mentioning Levi's" and the agent lists what that matches. Reply yes to delete them, cancel to keep them, or narrow the list ("only the jeans one"), which shows the shorter list for a fresh yes. Only the reports shown are deleted. A delete is soft: an admin can restore it for 30 days, and every delete is recorded in an audit table with the titles, the request and the trace id.
 

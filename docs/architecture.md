@@ -78,6 +78,7 @@ The order of these steps is a graph, not a prompt. The classifier, retrieval and
 | Cloud SQL for PostgreSQL | LangGraph checkpoints with the official Postgres saver: conversation state, including pending confirmations. Smallest instance, IAM authentication, 30-day retention. | D6.5 |
 | Cloud Storage | Stored query results, one file per result, path built by code from user and session. Deleted after a day by a lifecycle rule. | D6.6 |
 | Firestore Enterprise | Reports (versions, soft delete with a TTL purge, audit), user profiles, remembered context items, the trio index with vector search, and full-text search for "reports mentioning X". | D3.10, D4.6, D4.18, D6.8 |
+| Google Drive and Docs APIs | Each saved report becomes a Google Doc in a shared drive owned by the agent's service account, shared with its owner only as a commenter. Download, print and copy are off, and sharing stays inside the domain. Deletes trash the Doc and lost brand access removes the user from it, so the Doc follows the app's rules. | D3.13, D3.14, D3.15, D3.23 |
 | Cloud Run jobs + Cloud Scheduler + Eventarc | Same image as the service. Scheduler runs the nightly post-session review, checkpoint cleanup and nightly evals. Eventarc runs trio indexing when a trio file lands. | D6.7, D6.9 |
 | Cloud Trace + BigQuery (traces) | One OpenTelemetry trace per turn. Spans go to Cloud Trace for the waterfall and to BigQuery for metrics and deep dives. | D2.16, D2.23 |
 | Cloud Monitoring | Dashboards for the business and engineering views, plus alerts (leak-scan block, breaker open, job failure). | D2.18 |
@@ -121,6 +122,7 @@ The prototype is the same graph and the same rules, run locally from the CLI (D8
 | Cloud SQL checkpoints | LangGraph's in-memory checkpointer for the session |
 | Cloud Storage results | An in-process result store, isolated per session |
 | Firestore reports, profiles | One local SQLite file, `reports.db`, behind `ReportStore` and `ProfileStore` interfaces, so production needs only a Firestore adapter (D3.10, D4.25) |
+| Google Doc for each saved report | `/download <number>` writes the report as markdown to `reports/`, with its charts, and prints the full path |
 | Firestore vector search over trios | A prebuilt index file, `data/golden/index.json`, searched with numpy |
 | Prompt management for the persona | Versioned files in `config/persona/`, re-read every turn |
 | Cloud Trace and BigQuery | JSONL traces in `traces/`, `python -m analyst trace <id>`, `/stats` |

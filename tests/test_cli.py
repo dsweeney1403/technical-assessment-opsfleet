@@ -210,6 +210,12 @@ def test_reports_and_download_commands(monkeypatch, tmp_path):
                         lambda user_id, faults=None: cli.Session(CEO, graph, "t", tracer, reports))
     result = runner.invoke(cli.app, ["chat", "--user", "ceo"], input="/reports\n/download 1\n/download 9\n/exit\n",
                            env={"COLUMNS": "150"})
-    assert "Q1 report" in result.output and "Saved a copy to reports/q1-report.md" in result.output
+    assert "Q1 report" in result.output and "Saved a copy to:" in result.output
+    assert str(Path("reports/q1-report.md").resolve()) in result.output  # full path, on one line
     assert Path("reports/q1-report.md").read_text().startswith("# Q1 report")
     assert "Give a report number from /reports" in result.output
+
+
+def test_report_times_are_short_enough_for_the_table():
+    assert cli._when("2026-10-15T09:27:20+00:00") == "2026-10-15 09:27 UTC"
+    assert cli._when("2026-10-14") == "2026-10-14"  # a bare date is shown as it is

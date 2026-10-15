@@ -595,7 +595,9 @@ def build_graph(deps: Deps, checkpointer=None):
             body=report.body, chart_files=report.chart_paths, data_ts=report.data_ts, trace_id=state["trace_id"],
             findings=findings, mentions=mentions.scan(report.body, frames)))
         report = report.model_copy(update={"report_id": saved.report_id, "version": saved.version, "saved": True})
-        return {"draft": Draft(text=f"Saved '{report.title}'.", source="code"), "report": report}
+        return {"draft": Draft(text=f"Saved '{report.title}'. Type /reports to see your saved reports, and "
+                                    "/download with a report's number to save a copy as a file.", source="code"),
+                "report": report}
 
     def download_report(state: AgentState) -> dict:
         report = state.get("report")
@@ -804,4 +806,4 @@ def download(title: str, body: str, charts: list[str], directory: Path) -> Path:
             shutil.copy(src, dest)
             lines.append(f"\n![{src.stem}]({dest.name})")
     path.write_text("\n".join(lines))
-    return path
+    return path.resolve()  # the full path, so the user can find the file

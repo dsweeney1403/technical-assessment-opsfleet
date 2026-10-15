@@ -236,6 +236,11 @@ def answer(session: Session, text: str | None) -> None:
         console.print(f"[green]Chart saved:[/green] {path}")
 
 
+def _when(ts: str) -> str:
+    """'2026-10-15T09:27:20+00:00' as '2026-10-15 09:27 UTC', so the column doesn't truncate."""
+    return f"{ts[:10]} {ts[11:16]} UTC" if len(ts) >= 16 and ts[10] == "T" else ts
+
+
 def show_reports(session: Session) -> list:
     saved = session.reports.list(session.user) if session.reports is not None else []
     if not saved:
@@ -245,7 +250,7 @@ def show_reports(session: Session) -> list:
     for col in ("#", "Title", "Saved", "Data as of"):
         table.add_column(col)
     for i, r in enumerate(saved, 1):
-        table.add_row(str(i), r.title, r.created_at, r.data_ts)
+        table.add_row(str(i), r.title, _when(r.created_at), _when(r.data_ts))
     console.print(table)
     return saved
 
@@ -259,7 +264,9 @@ def download_numbered(session: Session, arg: str) -> None:
         return
     r = saved[int(arg) - 1]
     path = download(r.title, r.body, r.chart_files, load_settings().reports.download_dir)
-    console.print(f"Saved a copy to {path}. A downloaded copy is outside the app's access controls.", markup=False)
+    console.print("Saved a copy to:", markup=False)
+    console.print(f"  {path}", markup=False, soft_wrap=True)  # unwrapped, so the path can be copied
+    console.print("A downloaded copy is outside the app's access controls.", markup=False)
 
 
 def show_prefs(session: Session, arg: str) -> None:

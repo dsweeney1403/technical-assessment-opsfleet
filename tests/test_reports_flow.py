@@ -243,7 +243,7 @@ def test_save_then_redo_is_a_new_version_of_the_same_report(env):
     turn("revenue by month")
     turn("Make a Q1 report")
     state, _ = turn("save it")
-    assert state["draft"].text == "Saved 'Q1 report'."
+    assert state["draft"].text.startswith("Saved 'Q1 report'. Type /reports")
     first = state["report"]
     (saved,) = reports.list(CEO)
     assert saved.version == 1 and "Q1 report" in saved.body and flow.SAVE_OFFER not in saved.body

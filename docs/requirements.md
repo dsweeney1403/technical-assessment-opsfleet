@@ -79,7 +79,15 @@ Code then:
 - A writer returns structure: findings with result IDs, action items with an anchored why and a suggested how, and next questions. Code checks every action's anchor; an action with nothing behind it becomes an offer to investigate. Suggested targets are labelled.
 - Reports are offered for saving; "make it shorter" creates a new version.
 
-**Prototype:** all of the above, with a SQLite store behind the `ReportStore` interface.
+**Saved reports go to Google Docs (D3.14).** The company is on Google Workspace, so a saved report is also written as a Google Doc. Executives read and share it where they already work, and nothing needs downloading to a laptop. The Doc stays under the app's control:
+- It lives in a shared drive owned by the agent's service account and is shared with its owner only, as a commenter (owner-only reading, D3.13).
+- Viewers can't download, print or copy it, and the drive only allows sharing inside the company domain.
+- A new version updates the same Doc, so Docs' version history matches the report's versions.
+- A delete moves the Doc to the drive's trash, which keeps it restorable for 30 days, the same window as the soft delete (D3.23). The audit row records it.
+- If the owner loses access to a brand the report covers, their access to the Doc is removed until it returns (D3.15).
+- Firestore stays the source of truth for versions, mentions, deletes and the audit table. The Doc is how the report is read.
+
+**Prototype:** all of the above except the Google Doc, with a SQLite store behind the `ReportStore` interface. `/reports` lists saved reports, and `/download <number>` writes one to the `reports/` folder as markdown with its charts, printing the full path. That file stands in for the Doc. A local file is outside the app's access controls, which is the reason production uses Docs instead.
 
 ## R4 Continuous improvement
 
