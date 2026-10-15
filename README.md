@@ -16,9 +16,10 @@ The prototype implements safety and PII masking, report deletion with confirmati
 ## Setup
 
 You need:
-- Python 3.12, 3.13 or 3.14.
+- Python 3.12, 3.13 or 3.14. Check with `python3 --version`. On a Mac the built-in `python3` is often older. Install a newer one, for example with `brew install python@3.13`, and create the venv with `python3.13 -m venv .venv`.
 - A free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 - Google Cloud credentials for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, with no credit card needed.
+- The [gcloud CLI](https://cloud.google.com/sdk/docs/install), to sign in for BigQuery.
 
 Nothing is deployed. The agent runs locally, queries the public dataset (about 6 MB per query, inside the free tier) and keeps everything else in local files created on first run.
 
@@ -34,6 +35,8 @@ python -m analyst doctor                  # checks everything and names the fix 
 python -m analyst chat --user ceo
 ```
 
+On Windows, activate with `.venv\Scripts\activate` and copy the file with `copy .env.example .env`. The other commands are the same.
+
 Run `doctor` first: it checks your key, your BigQuery access, the models and the config, and names the exact fix for anything wrong. If `GOOGLE_CLOUD_PROJECT` isn't set in `.env`, the project attached to your Google Cloud credentials is used.
 
 Three demo users are in `config/users.yaml`:
@@ -44,7 +47,21 @@ Three demo users are in `config/users.yaml`:
 | `bm_calvin` | Calvin Klein only |
 | `bm_levis` | Levi's and Canada Goose |
 
-Try a scoped user with `python -m analyst chat --user bm_calvin`. In the chat, `/help` lists the commands.
+In the chat, `/help` lists the commands and `/exit` leaves.
+
+### First things to try
+
+| As | Type | What you should see |
+|---|---|---|
+| `ceo` | `What data do you have?` | A short answer with no query |
+| `ceo` | `What was revenue by month in 2025?` | A table that opens with its assumptions line |
+| `ceo` | `Just the last three months of 2025, and make it a chart.` | A chart drawn from the stored result, no new query |
+| `ceo` | `List the email addresses of our ten best customers.` | A polite decline: personal details are never returned |
+| `bm_calvin` | `How did Calvin Klein do in 2025 compared with Levi's?` | Calvin Klein's figures, with a note that Levi's is outside this user's access |
+| `ceo` | `Create a Q1 2026 report with action items for Q2.` | An outline that waits for your yes, then the report. Say `save it`, then `/reports` |
+| `ceo` | `Delete the report I made in this conversation.` (in the same chat) | The report listed, deleted only after you reply yes. Reports can also be picked by what they mention, such as `delete all reports mentioning Jeans` |
+
+Every answer ends with a trace ID. In a second terminal, `python -m analyst trace <id>` shows each step, query and model. To switch user, leave with `/exit` and start `python -m analyst chat --user bm_calvin`. A full recorded session is in [the example run](docs/example-run.md).
 
 **On the free tier:** the two Flash models the agent uses first each allow about 20 requests a day. An analysis question uses 2 to 8 of them and a full report about 30. So a day's free quota covers about 6 to 8 analysis questions, or one report and a few questions, on the Flash models. Declines, the delete flow and the fault flags use almost none. After that, the agent falls back to Flash-Lite: answers keep coming, but may be less thorough. If every model is limited, the agent says so plainly, and `/retry` picks the question up later. Your exact limits are at [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
 
