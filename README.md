@@ -22,7 +22,7 @@ You need:
 - A Google Cloud project for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, with no credit card needed.
 - The [gcloud CLI](https://cloud.google.com/sdk/docs/install), to sign in for BigQuery.
 
-Nothing is deployed. The agent runs locally, queries the public dataset (about 6 MB per query, inside the free tier) and keeps everything else in local files created on first run.
+Nothing is deployed. The agent runs locally, queries the public dataset and keeps everything else in local files created on first run. A query scans about 12 MB but is billed at about 42 MB, because BigQuery charges at least 10 MB for each table it reads. The free tier's 1 TB a month covers over 20,000 queries.
 
 ```bash
 git clone https://github.com/dsweeney1403/technical-assessment-opsfleet.git
