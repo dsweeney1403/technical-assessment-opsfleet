@@ -72,8 +72,8 @@ class Conversation:
 def write_persona(directory: Path, text: str) -> Path:
     """A one-version persona dir, for a case that tests a persona."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "v1.md").write_text(text)
-    (directory / "active").write_text("v1\n")
+    (directory / "v1.md").write_text(text, encoding="utf-8")
+    (directory / "active").write_text("v1\n", encoding="utf-8")
     return directory
 
 

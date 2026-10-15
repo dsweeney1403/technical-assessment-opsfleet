@@ -327,7 +327,7 @@ class JsonlExporter:
 
     def write(self, record: dict) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
-        with self.path(record["conversation_id"]).open("a") as f:
+        with self.path(record["conversation_id"]).open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, default=str) + "\n")
 
 
@@ -335,7 +335,7 @@ def read_traces(path: Path) -> list[dict]:
     """Every line of a conversation's file: turn records, plus feedback lines (`"type": "feedback"`)."""
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def is_feedback(record: dict) -> bool:

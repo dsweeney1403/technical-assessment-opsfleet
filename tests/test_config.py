@@ -24,7 +24,7 @@ def test_unknown_user_lists_known_ids():
 
 def _write(tmp_path, name, data):
     p = tmp_path / name
-    p.write_text(yaml.safe_dump(data))
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
     return p
 
 

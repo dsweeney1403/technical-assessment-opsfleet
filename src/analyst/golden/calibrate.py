@@ -34,7 +34,7 @@ class LabelledSet(BaseModel):
 
 
 def load_labelled_set(path: Path) -> LabelledSet:
-    return LabelledSet.model_validate(yaml.safe_load(Path(path).read_text()))
+    return LabelledSet.model_validate(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
 
 
 @dataclass

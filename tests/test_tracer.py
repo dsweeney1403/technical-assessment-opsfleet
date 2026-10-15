@@ -203,7 +203,7 @@ def test_trace_never_holds_rows_the_model_did_not_see(run):
     turn, t = make({settings.models.light: [intent("analysis")],
                     settings.models.agent: [sql_call(1), usage(AIMessage("Revenue was 100 each month."))]})
     turn("revenue by month")
-    assert ROW_ONLY_IN_BIGQUERY not in t.path.read_text()
+    assert ROW_ONLY_IN_BIGQUERY not in t.path.read_text(encoding="utf-8")
 
 
 def test_fallback_model_and_retries_recorded(run):

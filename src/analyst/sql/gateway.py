@@ -66,7 +66,7 @@ def load_curated(dataset: str, path: Path = CURATED_SQL) -> dict[str, str]:
     """Parse curated.sql into {table_name: select_sql}."""
     tables: dict[str, list[str]] = {}
     current = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         m = re.match(r"--\s*name:\s*(\w+)", line)
         if m:
             current = m.group(1)

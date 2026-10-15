@@ -69,7 +69,7 @@ def git_sha() -> str:
 
 
 def _load(name: str) -> dict:
-    return yaml.safe_load((EVALS_DIR / name).read_text())
+    return yaml.safe_load((EVALS_DIR / name).read_text(encoding="utf-8"))
 
 
 def _calls(turns) -> int:
@@ -222,7 +222,7 @@ class Components:
                               _calls(conv.turns))
 
         for path in sorted((EVALS_DIR / "e2e").glob("*.yaml")):
-            c = yaml.safe_load(path.read_text())
+            c = yaml.safe_load(path.read_text(encoding="utf-8"))
             yield c["id"], lambda c=c: one(c)
 
     def red_team(self) -> Iterator[tuple[str, Callable[[], CaseResult]]]:
@@ -254,12 +254,12 @@ class Components:
 
 
 def _read_jsonl(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.exists() else []
 
 
 def _append(path: Path, row: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as f:
+    with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, default=str) + "\n")
 
 
@@ -318,5 +318,5 @@ def run(settings: Settings, components: list[str], components_impl: Components |
     if baseline:
         summary = {k: row[k] for k in ("run_id", "started_at", "git_sha", "model_versions", "scores",
                                        "red_team_outcome", "red_team_behaviour", "cases", "failed")}
-        (results_dir / "baseline.json").write_text(json.dumps(summary, indent=2) + "\n")
+        (results_dir / "baseline.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return row

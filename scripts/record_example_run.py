@@ -169,14 +169,14 @@ def main() -> None:
                  "falls back to the previous version, and the trace says so."):
         pdir = WORK / "persona"
         shutil.copytree(ROOT / "config" / "persona", pdir)
-        (pdir / "active").write_text("v1\n")
+        (pdir / "active").write_text("v1\n", encoding="utf-8")
         ceo = session("ceo", "persona", persona_dir=pdir)
         say(ceo, "What was revenue in September 2026?")
         cli.console.print("\n# config/persona/active changed from v1 to v2\n", markup=False)
-        (pdir / "active").write_text("v2\n")
+        (pdir / "active").write_text("v2\n", encoding="utf-8")
         say(ceo, "And in August 2026?")
         cli.console.print("\n# config/persona/v2.md emptied by mistake\n", markup=False)
-        (pdir / "v2.md").write_text("")
+        (pdir / "v2.md").write_text("", encoding="utf-8")
         say(ceo, "How many orders did we have in August 2026?")
         cli.console.print(f"trace persona: {ceo.tracer.last.get('persona')}", markup=False)
 
@@ -212,7 +212,7 @@ def main() -> None:
     ]
     for i, (title, note, transcript) in enumerate(sections, 1):
         lines += ["", f"## {i}. {title}", "", note, "", "```text", transcript, "```"]
-    (ROOT / "docs" / "example-run.md").write_text("\n".join(lines) + "\n")
+    (ROOT / "docs" / "example-run.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Wrote docs/example-run.md ({len(sections)} sections). Work files in {WORK}.")
 
 

@@ -320,7 +320,7 @@ def test_download_writes_markdown(env, tmp_path):
     turn("Make a report")
     state, _ = turn("download it")
     path = tmp_path / "reports" / "q1-report.md"
-    assert path.exists() and "# Q1 report" in path.read_text() and str(path) in state["draft"].text
+    assert path.exists() and "# Q1 report" in path.read_text(encoding="utf-8") and str(path) in state["draft"].text
 
 
 # Delete (D3.17 to D3.27)

@@ -39,7 +39,7 @@ class Result(BaseModel):
 
 
 def load_cases(path: Path) -> list[Case]:
-    return [Case.model_validate(c) for c in yaml.safe_load(Path(path).read_text())["cases"]]
+    return [Case.model_validate(c) for c in yaml.safe_load(Path(path).read_text(encoding="utf-8"))["cases"]]
 
 
 def check(case: Case, record: dict) -> list[str]:

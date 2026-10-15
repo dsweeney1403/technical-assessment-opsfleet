@@ -162,7 +162,7 @@ def test_new_session_uses_its_own_files_persona_and_seed(tmp_path):
     session = new_session("bm_levis", tmp_path / "case", persona="# p\nBe brief.",
                           seed=[SeedReport(owner="bm_levis", title="Levi's review", mentions=["Levi's"])], build=build)
     assert seen["reports"] == tmp_path / "case" / "reports.db"
-    assert (seen["persona"] / "v1.md").read_text() == "# p\nBe brief." and (seen["persona"] / "active").exists()
+    assert (seen["persona"] / "v1.md").read_text(encoding="utf-8") == "# p\nBe brief." and (seen["persona"] / "active").exists()
     assert [r.title for r in session.reports.list(session.user)] == ["Levi's review"]
 
 
@@ -204,12 +204,12 @@ def run(settings, components, impl, **kw):
 def test_run_writes_both_files_in_the_d618_shape(settings):
     row = run(settings, ["classifier", "red_team", "sql"], FakeComponents(), baseline=True)
     results = settings.evals.results_dir
-    (run_row,) = [json.loads(x) for x in (results / "eval_runs.jsonl").read_text().splitlines()]
+    (run_row,) = [json.loads(x) for x in (results / "eval_runs.jsonl").read_text(encoding="utf-8").splitlines()]
     assert run_row == row
     for key in ("run_id", "started_at", "git_sha", "trigger", "model_versions", "scores", "red_team_outcome",
                 "is_baseline", "approved_by", "approved_at", "override"):
         assert key in row
-    cases = [json.loads(x) for x in (results / "eval_cases.jsonl").read_text().splitlines()]
+    cases = [json.loads(x) for x in (results / "eval_cases.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {(c["component"], c["case_id"]) for c in cases} == {("classifier", "c1"), ("classifier", "c2"),
                                                                ("red_team", "r1#1"), ("red_team", "r1#2"),
                                                                ("sql", "s1")}
@@ -219,7 +219,7 @@ def test_run_writes_both_files_in_the_d618_shape(settings):
     assert not broken["passed"] and "BigQuery said no" in broken["notes"]  # a broken case fails, the run goes on
     assert row["scores"] == {"classifier": 0.5, "red_team": 1.0, "sql": 0.0}
     assert (row["red_team_outcome"], row["red_team_behaviour"]) == (1.0, 0.5)
-    baseline = json.loads((results / "baseline.json").read_text())
+    baseline = json.loads((results / "baseline.json").read_text(encoding="utf-8"))
     assert baseline["scores"] == row["scores"] and "cases" in baseline and "notes" not in json.dumps(baseline)
 
 
@@ -255,15 +255,15 @@ def test_eval_command_blocks_on_a_safety_miss(settings, monkeypatch):
 
 def test_eval_sets_are_well_formed():
     users = {u.id for u in load_users().users}
-    classifier = yaml.safe_load((EVALS / "classifier.yaml").read_text())["cases"]
+    classifier = yaml.safe_load((EVALS / "classifier.yaml").read_text(encoding="utf-8"))["cases"]
     assert len(classifier) >= 30 and {c["intent"] for c in classifier} <= {i.value for i in Intent}
-    replies = yaml.safe_load((EVALS / "delete_replies.yaml").read_text())["cases"]
+    replies = yaml.safe_load((EVALS / "delete_replies.yaml").read_text(encoding="utf-8"))["cases"]
     assert len(replies) >= 15 and {c["decision"] for c in replies} == {"yes", "narrow", "cancel", "unclear"}
-    sql = yaml.safe_load((EVALS / "sql.yaml").read_text())["cases"]
+    sql = yaml.safe_load((EVALS / "sql.yaml").read_text(encoding="utf-8"))["cases"]
     assert len(sql) >= 15 and {c["user"] for c in sql} <= users
-    red = yaml.safe_load((EVALS / "red_team.yaml").read_text())["cases"]
+    red = yaml.safe_load((EVALS / "red_team.yaml").read_text(encoding="utf-8"))["cases"]
     assert len(red) >= 15 and {c["user"] for c in red} <= users
-    e2e = [yaml.safe_load(p.read_text()) for p in sorted((EVALS / "e2e").glob("*.yaml"))]
+    e2e = [yaml.safe_load(p.read_text(encoding="utf-8")) for p in sorted((EVALS / "e2e").glob("*.yaml"))]
     assert len(e2e) == 5 and {c["user"] for c in e2e} <= users
     for c in [*sql, *red, *e2e]:
         for s in c.get("seed", []):

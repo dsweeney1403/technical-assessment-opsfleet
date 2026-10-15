@@ -111,7 +111,7 @@ def redact_names(text: str, names: list[str], brands: BrandMatcher) -> str:
 
 def load_trios(directory: Path) -> list[tuple[TrioSource, Path]]:
     paths = sorted(Path(directory).glob("*.yaml"))
-    return [(TrioSource.model_validate(yaml.safe_load(p.read_text())), p) for p in paths]
+    return [(TrioSource.model_validate(yaml.safe_load(p.read_text(encoding="utf-8"))), p) for p in paths]
 
 
 def index_trio(trio: TrioSource, source_ref: str, llm: LLM, brands: BrandMatcher,
@@ -156,8 +156,8 @@ def write_index(index: TrioIndex, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     head = json.dumps(index.model_dump(exclude={"trios"}))[:-1]
     trios = ",\n".join(json.dumps(t.model_dump(), ensure_ascii=False) for t in index.trios)
-    path.write_text(f'{head}, "trios": [\n{trios}\n]}}\n')
+    path.write_text(f'{head}, "trios": [\n{trios}\n]}}\n', encoding="utf-8")
 
 
 def read_index(path: Path) -> TrioIndex:
-    return TrioIndex.model_validate_json(Path(path).read_text())
+    return TrioIndex.model_validate_json(Path(path).read_text(encoding="utf-8"))

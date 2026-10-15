@@ -57,7 +57,7 @@ def load_stoplist(path: Path = STOPLIST) -> set[str]:
     if not path.exists():
         return set()
     names = set()
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         name = line.split("\t#")[0].strip()
         if name and not name.startswith("#"):
             names.add(name)

@@ -97,7 +97,7 @@ def test_build_index_embeds_question_plus_description_and_writes_no_sql(tmp_path
     assert embedder.calls == [(["Why are Levis sales in Texas behind?\nCompares two states."], "document")]
     path = tmp_path / "index.json"
     write_index(index, path)
-    raw = path.read_text()
+    raw = path.read_text(encoding="utf-8")
     assert "SELECT" not in raw and "bigquery-public-data" not in raw
     back = read_index(path)
     assert back.trios[0].source_ref == "trios/t99.yaml" and len(back.trios[0].embedding) == 4
@@ -171,7 +171,7 @@ def test_committed_index_matches_the_trios_and_settings():
     trios = load_trios(resolve(settings.golden.trios_dir))
     assert {t.trio_id for t in index.trios} == {t.id for t, _ in trios}
     assert index.model == settings.models.embedding and index.dimensions == settings.models.embedding_dimensions
-    raw = resolve(settings.golden.index).read_text()
+    raw = resolve(settings.golden.index).read_text(encoding="utf-8")
     for t, _ in trios:
         assert t.sql.strip().splitlines()[0] not in raw  # SQL never reaches the index (D4.1)
     assert "@" not in raw and "Gonzalez" not in raw  # the named customer is redacted (D4.11)

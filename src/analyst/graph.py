@@ -805,5 +805,5 @@ def download(title: str, body: str, charts: list[str], directory: Path) -> Path:
             dest = directory / src.name
             shutil.copy(src, dest)
             lines.append(f"\n![{src.stem}]({dest.name})")
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     return path.resolve()  # the full path, so the user can find the file

@@ -52,7 +52,7 @@ def record(trace_id="7f3a1c2e", attempt=1, outcome="answered", reason="OK"):
 def write(tmp_path, *records):
     d = tmp_path / "traces"
     d.mkdir(exist_ok=True)
-    with (d / "conv1.jsonl").open("a") as f:
+    with (d / "conv1.jsonl").open("a", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r) + "\n")
     return d

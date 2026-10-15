@@ -180,7 +180,7 @@ def _read_yaml(path: Path) -> dict:
     if not path.exists():
         raise ConfigError(f"Missing config file: {path}")
     try:
-        data = yaml.safe_load(path.read_text())
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path.name} is not valid YAML: {exc}") from exc
     if not isinstance(data, dict):
@@ -240,7 +240,7 @@ def load_glossary(path: Path | None = None) -> Glossary:
     if not path.exists():
         raise ConfigError(f"Missing glossary: {path}")
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path.name} is not valid JSON: {exc}") from exc
     return _validate(Glossary, data, path.name)

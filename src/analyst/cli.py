@@ -509,7 +509,7 @@ def golden_calibrate(
         if out:
             path = Path(out)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(markdown(cal, store.model, store.dimensions))
+            path.write_text(markdown(cal, store.model, store.dimensions), encoding="utf-8")
             console.print(f"Wrote {path}.", markup=False)
         done = True
     if not done:

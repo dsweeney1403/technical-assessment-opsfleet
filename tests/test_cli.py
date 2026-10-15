@@ -212,7 +212,7 @@ def test_reports_and_download_commands(monkeypatch, tmp_path):
                            env={"COLUMNS": "150"})
     assert "Q1 report" in result.output and "Saved a copy to:" in result.output
     assert str(Path("reports/q1-report.md").resolve()) in result.output  # full path, on one line
-    assert Path("reports/q1-report.md").read_text().startswith("# Q1 report")
+    assert Path("reports/q1-report.md").read_text(encoding="utf-8").startswith("# Q1 report")
     assert "Give a report number from /reports" in result.output
 
 
