@@ -44,7 +44,7 @@ sequenceDiagram
     participant C as Cloud Storage
 
     B->>S: question (SSE stream opens, IAP checks the user)
-    S->>F: load profile and persona; checkpoint from Cloud SQL
+    S->>F: load profile and persona, and the checkpoint from Cloud SQL
     S->>G: classify intent (Flash-Lite)
     S->>G: embed the question
     S->>F: vector search over trios, brand filter in code
