@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import yaml
 
@@ -55,7 +57,7 @@ def test_duplicate_user_ids(tmp_path):
 
 
 def _clear(monkeypatch):
-    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT"):
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -89,5 +91,22 @@ def test_project_falls_back_to_adc(tmp_path, monkeypatch):
 def test_no_project_anywhere(tmp_path, monkeypatch):
     _clear(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    with pytest.raises(ConfigError, match="set-quota-project"):
+    with pytest.raises(ConfigError, match="GOOGLE_CLOUD_PROJECT in .env"):
         load_env(tmp_path / "missing.env", adc_project=lambda: None)
+
+
+def test_project_becomes_quota_project(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    load_env(tmp_path / "missing.env")
+    assert os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] == "p"
+
+
+def test_quota_project_already_set_is_kept(tmp_path, monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    monkeypatch.setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "billing")
+    load_env(tmp_path / "missing.env")
+    assert os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] == "billing"

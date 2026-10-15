@@ -14,6 +14,7 @@ class Check:
     ok: bool
     detail: str
     fix: str = ""
+    skipped: bool = False
 
 
 def check_config() -> Check:
@@ -29,7 +30,7 @@ def check_env() -> Check:
     try:
         env = load_env()
     except ConfigError as exc:
-        return Check("Environment", False, str(exc), "Copy .env.example to .env and fill it in.")
+        return Check("Environment", False, str(exc))  # the message is the fix
     return Check("Environment", True, f"GEMINI_API_KEY set, project {env.google_cloud_project}")
 
 
@@ -56,7 +57,7 @@ def check_gemini() -> Check:
 
 def check_bigquery() -> Check:
     fix = ("Run `gcloud auth application-default login`, and set GOOGLE_CLOUD_PROJECT to a project "
-           "with the BigQuery API enabled and billing set up.")
+           "with the BigQuery API enabled. A free BigQuery sandbox project works.")
     try:
         from google.cloud import bigquery
 
@@ -109,10 +110,22 @@ def check_reconciliation() -> Check:
     return Check("Reconciliation", True, f"Curated tables match raw tables ({len(checks)} checks)")
 
 
-CHECKS: list[Callable[[], Check]] = [
-    check_config, check_env, check_gemini, check_bigquery, check_curated_sql, check_reconciliation,
+# (name, check, checks it needs). A check whose prerequisite failed is skipped, so one
+# cause shows as one FAIL with its fix instead of a FAIL on every check after it.
+CHECKS: list[tuple[str, Callable[[], Check], tuple[str, ...]]] = [
+    ("Config", check_config, ()),
+    ("Environment", check_env, ()),
+    ("Gemini", check_gemini, ("Config", "Environment")),
+    ("BigQuery", check_bigquery, ("Config", "Environment")),
+    ("Curated SQL", check_curated_sql, ("BigQuery",)),
+    ("Reconciliation", check_reconciliation, ("BigQuery",)),
 ]
 
 
-def run_checks(checks: list[Callable[[], Check]] | None = None) -> list[Check]:
-    return [check() for check in (checks or CHECKS)]
+def run_checks(checks: list[tuple[str, Callable[[], Check], tuple[str, ...]]] | None = None) -> list[Check]:
+    results: dict[str, Check] = {}
+    for name, check, needs in checks or CHECKS:
+        failed = [n for n in needs if not results[n].ok]
+        results[name] = (Check(name, False, f"Skipped until {' and '.join(failed)} passes.", skipped=True)
+                         if failed else check())
+    return list(results.values())

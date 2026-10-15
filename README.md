@@ -17,9 +17,9 @@ The prototype implements safety and PII masking, report deletion with confirmati
 ## Setup
 
 You need:
-- Python 3.12, 3.13 or 3.14. Check with `python3 --version`. On a Mac the built-in `python3` is often older. Install a newer one, for example with `brew install python@3.13`, and create the venv with `python3.13 -m venv .venv`.
+- Python 3.12, 3.13 or 3.14. Check with `python3 --version`, or `python --version` on Windows. On a Mac the built-in `python3` is often older. Install a newer one, for example with `brew install python@3.13`, and create the venv with `python3.13 -m venv .venv`.
 - A free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
-- Google Cloud credentials for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, with no credit card needed.
+- A Google Cloud project for BigQuery. A free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) project works, with no credit card needed.
 - The [gcloud CLI](https://cloud.google.com/sdk/docs/install), to sign in for BigQuery.
 
 Nothing is deployed. The agent runs locally, queries the public dataset (about 6 MB per query, inside the free tier) and keeps everything else in local files created on first run.
@@ -27,24 +27,27 @@ Nothing is deployed. The agent runs locally, queries the public dataset (about 6
 ```bash
 git clone https://github.com/dsweeney1403/technical-assessment-opsfleet.git
 cd technical-assessment-opsfleet
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv                     # Windows: python -m venv .venv
+source .venv/bin/activate                 # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                      # add your Gemini key
+cp .env.example .env                      # Windows: copy .env.example .env
 gcloud auth application-default login     # BigQuery credentials
+```
+
+Open `.env` and set `GEMINI_API_KEY` to your Gemini key and `GOOGLE_CLOUD_PROJECT` to your project ID. `gcloud projects list` shows your projects. Then:
+
+```bash
 python -m analyst doctor                  # checks everything and names the fix for any failure
 python -m analyst chat --user ceo
 ```
 
-On Windows, activate with `.venv\Scripts\activate` and copy the file with `copy .env.example .env`. The other commands are the same.
-
 Run `doctor` first. It checks, in a few seconds:
 - The config files load.
-- `.env` has a Gemini key, and the key can use every model the agent needs.
+- `.env` has a Gemini key and a project, and the key can use every model the agent needs.
 - Your Google credentials can read the public dataset.
 - The three tables the agent queries build correctly and match the raw data's totals.
 
-Each line says OK or FAIL, and every FAIL names the exact fix, so a setup problem never shows up mid-chat. It's free: the Gemini check only lists models, which doesn't count against your daily requests, and the BigQuery checks stay inside the free tier. If `GOOGLE_CLOUD_PROJECT` isn't set in `.env`, the project attached to your Google Cloud credentials is used.
+Each line says OK, FAIL or SKIP. Every FAIL names the exact fix. A check is skipped when one it depends on failed, so one problem shows up once. It's free: the Gemini check only lists models, which doesn't count against your daily requests, and the BigQuery checks stay inside the free tier.
 
 Three demo users are in `config/users.yaml`:
 

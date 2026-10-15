@@ -108,6 +108,35 @@ def test_doctor_reports_failures_with_fix(monkeypatch):
     assert "FAIL" in result.output and "Check GEMINI_API_KEY" in result.output
 
 
+def test_doctor_skips_checks_after_a_failed_prerequisite(monkeypatch):
+    from analyst import doctor
+
+    ran = []
+
+    def check(name, ok):
+        return lambda: ran.append(name) or Check(name, ok, "detail", "" if ok else "the fix")
+
+    results = doctor.run_checks([
+        ("Config", check("Config", True), ()),
+        ("Environment", check("Environment", False), ()),
+        ("Gemini", check("Gemini", True), ("Config", "Environment")),
+        ("BigQuery", check("BigQuery", True), ("Config", "Environment")),
+        ("Curated SQL", check("Curated SQL", True), ("BigQuery",)),
+    ])
+    assert ran == ["Config", "Environment"]
+    assert [r.skipped for r in results] == [False, False, True, True, True]
+    assert results[2].detail == "Skipped until Environment passes."
+
+
+def test_doctor_shows_skip_without_a_fix_line(monkeypatch):
+    monkeypatch.setattr(cli.doctor_checks, "run_checks", lambda: [
+        Check("Environment", False, "No Google Cloud project found."),
+        Check("Gemini", False, "Skipped until Environment passes.", skipped=True)])
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 1
+    assert "SKIP" in result.output and "Fix:" not in result.output
+
+
 def test_doctor_all_ok(monkeypatch):
     monkeypatch.setattr(cli.doctor_checks, "run_checks", lambda: [Check("Config", True, "ok")])
     assert runner.invoke(cli.app, ["doctor"]).exit_code == 0

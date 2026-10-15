@@ -630,8 +630,8 @@ def doctor() -> None:
     table.add_column("Result")
     table.add_column("Detail")
     for r in results:
-        table.add_row(r.name, "[green]OK[/green]" if r.ok else "[red]FAIL[/red]",
-                      r.detail if r.ok else f"{r.detail}\n[bold]Fix:[/bold] {r.fix}")
+        result = "[green]OK[/green]" if r.ok else "[yellow]SKIP[/yellow]" if r.skipped else "[red]FAIL[/red]"
+        table.add_row(r.name, result, f"{r.detail}\n[bold]Fix:[/bold] {r.fix}" if r.fix and not r.ok else r.detail)
     console.print(table)
     if not all(r.ok for r in results):
         raise typer.Exit(1)

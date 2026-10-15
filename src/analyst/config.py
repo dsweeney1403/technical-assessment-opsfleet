@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -265,18 +266,21 @@ class Env(BaseModel):
 
 
 def _adc_project() -> str | None:
-    """The project attached to Application Default Credentials, if any."""
+    """The gcloud default project, or the quota project on Application Default Credentials."""
     try:
         import google.auth
 
-        return google.auth.default()[1]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # the "no quota project" warning: this probe is looking for one
+            credentials, project = google.auth.default()
+        return project or getattr(credentials, "quota_project_id", None)
     except Exception:
         return None
 
 
 def load_env(env_file: Path | None = None, adc_project=_adc_project) -> Env:
     """Read credentials settings (D8.3). GOOGLE_API_KEY is accepted as an alias for
-    GEMINI_API_KEY; GOOGLE_CLOUD_PROJECT falls back to the ADC project."""
+    GEMINI_API_KEY; GOOGLE_CLOUD_PROJECT falls back to the gcloud or ADC quota project."""
     load_dotenv(env_file or ROOT / ".env")
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
@@ -287,8 +291,9 @@ def load_env(env_file: Path | None = None, adc_project=_adc_project) -> Env:
     project = os.environ.get("GOOGLE_CLOUD_PROJECT") or adc_project()
     if not project:
         raise ConfigError(
-            "No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT in .env, or run "
-            "`gcloud auth application-default set-quota-project <project-id>`. "
-            "A free BigQuery sandbox project works."
+            "No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT in .env to your project ID. "
+            "`gcloud projects list` shows them. A free BigQuery sandbox project works."
         )
+    # gcloud user credentials need a quota project. Without one, google-auth warns on every client.
+    os.environ.setdefault("GOOGLE_CLOUD_QUOTA_PROJECT", project)
     return Env(gemini_api_key=key, google_cloud_project=project)
