@@ -12,6 +12,7 @@ The prototype implements safety and PII masking, report deletion with confirmati
 | [Evaluation](docs/evaluation.md) | Testing before deployment, report intent, UX, and the prototype's eval baseline |
 | [Example run](docs/example-run.md) | A recorded session covering every feature |
 | [Trio calibration](docs/golden-calibration.md) | How the retrieval threshold was set |
+| [Design decisions](docs/decisions.md) | All 144 design decisions: what was decided, why, and what was rejected. The IDs in the other documents point here |
 
 ## Setup
 
@@ -71,7 +72,7 @@ Every answer ends with a trace ID. In a second terminal, `python -m analyst trac
 
 **On the free tier:** the two Flash models the agent uses first each allow about 20 requests a day. An analysis question uses 2 to 8 of them and a full report about 30. So a day's free quota covers about 6 to 8 analysis questions, or one report and a few questions, on the Flash models. Declines, the delete flow and the fault flags use almost none. After that, the agent falls back to Flash-Lite: answers keep coming, but may be less thorough. If every model is limited, the agent says so plainly, and `/retry` picks the question up later. Your exact limits are at [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
 
-Run the tests with `pytest`. They are mocked and need no credentials, and they also run on every push in GitHub Actions.
+Run the tests with `pytest`. They are mocked and need no credentials, and they also run on every push in GitHub Actions, on Linux and Windows.
 
 ## Trying the failure handling
 

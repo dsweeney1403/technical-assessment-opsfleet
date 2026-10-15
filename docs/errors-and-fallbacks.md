@@ -1,6 +1,6 @@
 # Errors and fallbacks
 
-Every failure has one owner and one handling rule (D2.1, D2.4). The agent repairs what it caused. Code retries what an outside service caused. Anything that signals an attack stops the turn. The user only hears about a failure when nothing could recover it, and then in plain words.
+Every failure has one owner and one handling rule (D2.1, D2.4). The agent repairs what it caused. Code retries what an outside service caused. Anything that signals an attack stops the turn. The user only hears about a failure when nothing could recover it, and then in plain words. IDs such as D2.15 link to the reasoning in [design decisions](decisions.md).
 
 ## SQL gateway codes
 

@@ -1,6 +1,6 @@
 # How each requirement is met
 
-For each of the brief's requirements: what the design does, what the prototype builds, and the decisions behind it. The prototype must implement R2, R3, R5 and R7. The rest are designed in full and built where a small change demonstrates them (D2.15).
+For each of the brief's requirements: what the design does, what the prototype builds, and the decisions behind it. The prototype must implement R2, R3, R5 and R7. The rest are designed in full and built where a small change demonstrates them (D2.15). IDs such as D2.15 link to the reasoning in [design decisions](decisions.md).
 
 The guiding rule throughout: **the model proposes, code decides.** Access, PII, read-only, the output check and the delete gate are enforced in code and BigQuery, never by asking the model to behave.
 
@@ -184,7 +184,7 @@ Adding one means writing the tool, declaring its class, adding unit, eval and re
 | Extensibility | D7.1 to D7.4 | Design only |
 | Deliverable 1, diagram | D6.19 | [architecture](architecture.md) |
 | Deliverable 2a, reasoning | D1.19, D6.1 to D6.20 | [architecture](architecture.md) |
-| Deliverable 2b, data flow | Group 1 Interfaces, D6.19 | [architecture](architecture.md) |
-| Deliverable 2c, errors and fallbacks | Group 2 | [errors and fallbacks](errors-and-fallbacks.md) |
+| Deliverable 2b, data flow | D1.10, D6.19 | [architecture](architecture.md) |
+| Deliverable 2c, errors and fallbacks | D2.1 to D2.15 | [errors and fallbacks](errors-and-fallbacks.md) |
 | Deliverable 2d, setup and example run | D8.3 | [README](../README.md), [example run](example-run.md) |
 | Deliverable 6, framework and experience | D1.19 | [architecture](architecture.md#why-langgraph-and-gemini) |

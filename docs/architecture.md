@@ -2,7 +2,7 @@
 
 OpsFleet Analyst is a chat agent that lets retail executives ask questions about sales, customers and products in plain words, discuss the answers and turn them into reports. This document is the high-level design for production, then how the prototype in this repository maps onto it.
 
-Decision IDs (D1.1, D6.4, ...) refer to the design log, where each decision records the options considered and why one was chosen.
+Decision IDs (D1.1, D6.4, ...) link each choice to its reasoning in [design decisions](decisions.md), which records what was decided, why, and what was rejected.
 
 ## Production design
 

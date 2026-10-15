@@ -1,6 +1,6 @@
 # Evaluation
 
-The brief asks three things: how the agent is evaluated before deployment, how we verify that reports answer the user's intent, and how UX is evaluated. This document answers each one for production, then describes what the prototype runs and its first baseline.
+The brief asks three things: how the agent is evaluated before deployment, how we verify that reports answer the user's intent, and how UX is evaluated. This document answers each one for production, then describes what the prototype runs and its first baseline. IDs such as D2.15 link to the reasoning in [design decisions](decisions.md).
 
 ## Before deployment: two kinds of testing (D5.1)
 
@@ -24,7 +24,7 @@ These are where safety lives, so they are tested exactly.
 
 A smaller end-to-end set of multi-turn conversations catches interactions between components.
 
-**SQL is scored by execution (D5.4).** The agent's result is compared with a reference result: rows in any order, column names ignored, numbers within a small relative tolerance. In the prototype, extra columns in the agent's result are allowed, as long as every reference column matches one of them. Cases are built so wrong logic gives a different answer (G5.4):
+**SQL is scored by execution (D5.4).** The agent's result is compared with a reference result: rows in any order, column names ignored, numbers within a small relative tolerance. In the prototype, extra columns in the agent's result are allowed, as long as every reference column matches one of them. Cases are built so wrong logic gives a different answer:
 - Counting cancelled or returned items as revenue.
 - The `Brasil` spelling.
 - Registered customers against buyers.
@@ -67,7 +67,7 @@ Hard blocks everywhere, prototype included: unit tests at 100% and the red-team 
 
 | Set | Size | File |
 |---|---|---|
-| Unit tests | about 480 | `tests/`, in CI on every push (`.github/workflows/tests.yml`) |
+| Unit tests | about 480 | `tests/`, in CI on every push, on Linux and Windows (`.github/workflows/tests.yml`) |
 | Intent classifier | 30 messages | `evals/classifier.yaml` |
 | Delete-reply classifier | 15 replies | `evals/delete_replies.yaml` |
 | Trio retrieval | 37 rephrasings, 10 with no match | `data/golden/labelled_set.yaml` |
