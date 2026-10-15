@@ -46,7 +46,7 @@ Three demo users are in `config/users.yaml`:
 
 Try a scoped user with `python -m analyst chat --user bm_calvin`. In the chat, `/help` lists the commands.
 
-**On the free tier:** one analysis question uses about 5 to 10 Gemini requests, and a report more. The free tier limits requests per minute and per day, so check your limits in AI Studio. When a limit is hit, the agent retries, then falls back to another model. If every model is limited, it says so plainly, and `/retry` picks the question up later.
+**On the free tier:** the two Flash models the agent uses first each allow about 20 requests a day. An analysis question uses 2 to 8 of them and a full report about 30. So a day's free quota covers about 6 to 8 analysis questions, or one report and a few questions, on the Flash models. Declines, the delete flow and the fault flags use almost none. After that, the agent falls back to Flash-Lite: answers keep coming, but may be less thorough. If every model is limited, the agent says so plainly, and `/retry` picks the question up later. Your exact limits are at [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
 
 Run the tests with `pytest`. They are mocked and need no credentials, and they also run on every push in GitHub Actions.
 
@@ -104,7 +104,7 @@ Reports and the audit table live in `reports.db`, a local SQLite file that is gi
 - Five end-to-end conversations.
 - A red team of 16 attacks, each run three times.
 
-It prints a score per set and the red-team safety outcome, which must be 100%: the command exits with code 1 otherwise. Results are written as `eval_runs` and `eval_cases` files in `evals/results/`. Open any failed case with `python -m analyst trace <id>`. The first baseline is committed in `evals/results/baseline.json`. A full run is about 400 Gemini requests, so on the free tier run one set at a time with `--only`. See [evaluation](docs/evaluation.md).
+It prints a score per set and the red-team safety outcome, which must be 100%: the command exits with code 1 otherwise. Results are written as `eval_runs` and `eval_cases` files in `evals/results/`. Open any failed case with `python -m analyst trace <id>`. The first baseline is committed in `evals/results/baseline.json`. A full run is about 400 Gemini requests, more than a free key allows in a day. On the free tier, try `--only classifier` or `--only delete_reply` (Flash-Lite only, a few minutes each at the default throttle) and read the baseline for the rest. See [evaluation](docs/evaluation.md).
 
 ## Definitions, worked examples and tone
 
