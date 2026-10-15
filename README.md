@@ -34,6 +34,8 @@ cp .env.example .env                      # Windows: copy .env.example .env
 gcloud auth application-default login     # BigQuery credentials
 ```
 
+If PowerShell says running scripts is disabled, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then activate again.
+
 Open `.env` and set `GEMINI_API_KEY` to your Gemini key and `GOOGLE_CLOUD_PROJECT` to your project ID. `gcloud projects list` shows your projects. Then:
 
 ```bash
